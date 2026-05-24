@@ -49,6 +49,13 @@
   .conn .stat{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;margin-top:7px;font-weight:600}
   .conn .stat.ok{color:#5BD08C}.conn .stat.ok::before{content:"";width:6px;height:6px;border-radius:50%;background:#5BD08C}
   .conn .stat.err{color:#F87171}
+  .yt{margin-top:10px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.06);border-radius:11px;padding:11px 13px;text-decoration:none;color:inherit;display:block;transition:.16s}
+  .yt:hover{background:rgba(255,0,0,.08);border-color:rgba(255,80,80,.35)}
+  .yt .yt-row{display:flex;align-items:center;gap:9px}
+  .yt .yt-ic{width:24px;height:24px;border-radius:6px;background:#FF0033;display:grid;place-items:center;flex-shrink:0}
+  .yt .yt-ic svg{width:14px;height:14px;fill:#fff}
+  .yt .yt-handle{font-family:var(--mono);font-size:12px;color:#fff;font-weight:600}
+  .yt .yt-tag{display:block;font-size:10.5px;color:#A9CDB6;margin-top:6px;line-height:1.4}
 
   /* Main */
   .main{padding:30px 40px;max-width:1080px}
@@ -100,6 +107,9 @@
   .tool-actions{margin-left:8px;display:flex;gap:6px}
   .tool-del{border:none;background:none;color:var(--ink-faint);cursor:pointer;font-size:13px;padding:3px 7px;border-radius:6px;transition:.16s}
   .tool-del:hover{background:#FEE2E2;color:#B91C1C}
+  .tool-edit{border:none;background:none;color:var(--ink-faint);cursor:pointer;padding:3px 6px;border-radius:6px;transition:.16s;display:inline-flex;align-items:center}
+  .tool-edit svg{width:13px;height:13px}
+  .tool-edit:hover{background:var(--canopy-soft);color:var(--canopy)}
   .tool-desc{font-size:13px;color:var(--ink-soft);margin:10px 0 13px;line-height:1.5}
   .endpoint{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);background:var(--oat);border:1px solid var(--line);border-radius:7px;padding:7px 11px;margin-bottom:11px;display:block;word-break:break-all}
   .params{display:flex;flex-wrap:wrap;gap:7px}
@@ -127,8 +137,8 @@
   .gen-url{background:var(--canopy-soft);border:1px solid var(--canopy-line);border-radius:9px;padding:11px 13px;font-family:var(--mono);font-size:12.5px;color:var(--canopy-deep);display:flex;align-items:center;gap:8px}
   .gen-url svg{width:14px;height:14px}
   .pbuild{border:1px solid var(--line);border-radius:11px;overflow:hidden;margin-bottom:6px}
-  .pbuild-head{display:grid;grid-template-columns:1.1fr 1fr .7fr .6fr 28px;gap:10px;padding:9px 13px;background:var(--oat);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);font-weight:600;border-bottom:1px solid var(--line)}
-  .prow{display:grid;grid-template-columns:1.1fr 1fr .7fr .6fr 28px;gap:10px;padding:9px 13px;align-items:center;border-bottom:1px solid var(--line)}
+  .pbuild-head{display:grid;grid-template-columns:.95fr 1fr .6fr .7fr .5fr 24px;gap:9px;padding:9px 13px;background:var(--oat);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);font-weight:600;border-bottom:1px solid var(--line)}
+  .prow{display:grid;grid-template-columns:.95fr 1fr .6fr .7fr .5fr 24px;gap:9px;padding:9px 13px;align-items:center;border-bottom:1px solid var(--line)}
   .prow:last-child{border-bottom:none}
   .prow input,.prow select{background:#fff;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:12px;font-family:var(--mono);width:100%}
   .prow .chk{display:grid;place-items:center}
@@ -174,6 +184,14 @@
       <span class="inst" id="connUrl">Not connected — click to configure</span>
       <span class="stat" id="connStat"></span>
     </div>
+
+    <a class="yt" href="https://www.youtube.com/@AIbyTusharM" target="_blank" rel="noopener noreferrer">
+      <div class="yt-row">
+        <div class="yt-ic"><svg viewBox="0 0 24 24"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8zM9.6 15.6V8.4l6.3 3.6z"/></svg></div>
+        <span class="yt-handle">@AIbyTusharM</span>
+      </div>
+      <span class="yt-tag">Subscribe for more such tools, learning and walkthroughs</span>
+    </a>
   </aside>
 
   <main class="main" id="mainArea">
@@ -244,7 +262,7 @@
 <div class="scrim" id="toolModal">
   <div class="modal" style="max-width:660px">
     <div class="modal-head">
-      <div><h3>Add Tool</h3><p>Wrap a ServiceNow API as a tool. These fields become the schema the model sees.</p></div>
+      <div><h3 id="toolModalTitle">Add Tool</h3><p>Wrap a ServiceNow API as a tool. These fields become the schema the model sees.</p></div>
       <button class="x" onclick="closeModal('toolModal')">&times;</button>
     </div>
     <div class="modal-body">
@@ -262,11 +280,11 @@
       </div>
       <div class="field"><label>Description <span class="hint">tell the model when to use it</span></label>
         <textarea id="tl_desc" rows="2" placeholder="Query the security incident table and return matching records."></textarea></div>
-      <div class="field"><label>Endpoint</label><input id="tl_endpoint" class="mono" placeholder="/api/now/table/sn_si_incident"></div>
+      <div class="field"><label>Endpoint <span class="hint">use {name} for path params, e.g. /api/now/table/incident/{sys_id}</span></label><input id="tl_endpoint" class="mono" placeholder="/api/now/table/sn_si_incident"></div>
       <div class="field">
         <label style="margin-bottom:9px">Parameters <span class="hint">inputs the model is allowed to pass</span></label>
         <div class="pbuild">
-          <div class="pbuild-head"><div>Name</div><div>Description</div><div>Type</div><div>Required</div><div></div></div>
+          <div class="pbuild-head"><div>Name</div><div>Description</div><div>Type</div><div>Send as</div><div>Required</div><div></div></div>
           <div id="paramRows"></div>
         </div>
         <button class="add-param" onclick="addParamRow()">
@@ -283,7 +301,7 @@
     <div class="modal-foot">
       <button class="btn btn-ghost btn-sm" onclick="testTool()">Test against instance</button>
       <button class="btn btn-ghost" onclick="closeModal('toolModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveTool()">Save Tool</button>
+      <button class="btn btn-primary" id="toolModalSubmit" onclick="saveTool()">Save Tool</button>
     </div>
   </div>
 </div>
@@ -429,6 +447,9 @@ function renderTool(t, serverId) {
       <span class="tool-name">${esc(t.name)}</span>
       <span class="tool-kind">${t.apiType === 'table' ? 'Table API' : 'Scripted REST'}</span>
       <div class="tool-actions">
+        <button class="tool-edit" onclick="openEditTool('${serverId}','${t.id}')" title="Edit tool">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4z"/></svg>
+        </button>
         <button class="tool-del" onclick="deleteTool('${serverId}','${t.id}')" title="Delete tool">&times;</button>
       </div>
     </div>
@@ -500,14 +521,41 @@ async function createServer() {
   toast(`Server "${s.name}" started`);
 }
 
-// ── Add Tool ──────────────────────────────────────────────────────────────────
+// ── Add / Edit Tool ───────────────────────────────────────────────────────────
+let editingToolId = null;
+
 function openAddTool() {
+  editingToolId = null;
+  document.getElementById('toolModalTitle').textContent = 'Add Tool';
+  document.getElementById('toolModalSubmit').textContent = 'Save Tool';
   document.getElementById('paramRows').innerHTML = '';
   document.getElementById('tl_name').value='';
   document.getElementById('tl_desc').value='';
   document.getElementById('tl_endpoint').value='';
   document.getElementById('tl_method').value='GET';
   document.querySelector('#apiTypeSeg button').click();
+  showErr('toolErr','');
+  openModal('toolModal');
+}
+
+function openEditTool(serverId, toolId) {
+  const s = servers.find(x => x.id === serverId);
+  const t = s?.tools.find(x => x.id === toolId);
+  if (!t) return;
+  editingToolId = toolId;
+  document.getElementById('toolModalTitle').textContent = 'Edit Tool';
+  document.getElementById('toolModalSubmit').textContent = 'Save Changes';
+  document.getElementById('tl_name').value = t.name || '';
+  document.getElementById('tl_desc').value = t.description || '';
+  document.getElementById('tl_endpoint').value = t.endpoint || '';
+  document.getElementById('tl_method').value = t.method || 'GET';
+  // API type segmented control
+  document.querySelectorAll('#apiTypeSeg button').forEach(b => {
+    b.classList.toggle('on', b.dataset.val === (t.apiType || 'table'));
+  });
+  // Params
+  document.getElementById('paramRows').innerHTML = '';
+  (t.parameters || []).forEach(p => addParamRow(p.name, p.description, p.type, p.in || 'auto', !!p.required));
   showErr('toolErr','');
   openModal('toolModal');
 }
@@ -522,12 +570,16 @@ async function saveTool() {
     parameters: params
   };
   if (!body.name || !body.endpoint) { showErr('toolErr','Name and endpoint are required'); return; }
-  const t = await api('POST', `/servers/${activeId}/tools`, body);
+  const isEdit = !!editingToolId;
+  const t = isEdit
+    ? await api('PUT', `/servers/${activeId}/tools/${editingToolId}`, body)
+    : await api('POST', `/servers/${activeId}/tools`, body);
   if (t.error) { showErr('toolErr', t.error); return; }
   closeModal('toolModal');
+  await loadServers();
   const s = servers.find(x => x.id === activeId);
   if (s) renderDetail(s);
-  toast(`Tool "${t.name}" added`);
+  toast(isEdit ? `Tool "${t.name}" updated` : `Tool "${t.name}" added`);
 }
 
 async function testTool() {
@@ -543,13 +595,15 @@ async function testTool() {
   if (r) toast('See console for raw response');
 }
 
-function addParamRow(name='', desc='', type='string', req=false) {
+function addParamRow(name='', desc='', type='string', loc='auto', req=false) {
   const row = document.createElement('div');
   row.className = 'prow';
+  const opt = (val, label) => `<option value="${val}"${loc===val?' selected':''}>${label}</option>`;
   row.innerHTML = `
     <input value="${esc(name)}" placeholder="param_name">
     <input value="${esc(desc)}" placeholder="Description">
     <select><option${type==='string'?' selected':''}>string</option><option${type==='number'?' selected':''}>number</option><option${type==='boolean'?' selected':''}>boolean</option></select>
+    <select>${opt('auto','Auto')}${opt('body','Body')}${opt('query','Query')}${opt('path','Path')}</select>
     <div class="chk"><input type="checkbox"${req?' checked':''}></div>
     <button class="rm" onclick="this.closest('.prow').remove()">&times;</button>`;
   document.getElementById('paramRows').appendChild(row);
@@ -558,7 +612,10 @@ function addParamRow(name='', desc='', type='string', req=false) {
 function collectParams() {
   return [...document.querySelectorAll('#paramRows .prow')].map(row => {
     const inputs = row.querySelectorAll('input,select');
-    return { name: inputs[0].value, description: inputs[1].value, type: inputs[2].value, required: inputs[3].checked };
+    const p = { name: inputs[0].value, description: inputs[1].value, type: inputs[2].value, required: inputs[4].checked };
+    const loc = inputs[3].value;
+    if (loc !== 'auto') p.in = loc;
+    return p;
   });
 }
 

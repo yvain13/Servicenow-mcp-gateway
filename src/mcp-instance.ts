@@ -116,7 +116,12 @@ export class MCPInstance {
             },
           });
 
+          // Break the close-cycle: server.close() calls transport.close(), which
+          // fires this onclose again. The flag bails on re-entry so we don't recurse.
+          let cleaningUp = false;
           newTransport.onclose = () => {
+            if (cleaningUp) return;
+            cleaningUp = true;
             const sid = newTransport.sessionId;
             if (sid) this.transports.delete(sid);
             server.close().catch(() => {});

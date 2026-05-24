@@ -1,4 +1,4 @@
-import type { Tool, HttpMethod } from "./types.js";
+import type { Tool, Parameter, ParamLocation } from "./types.js";
 
 export interface SNCredentials {
   instanceUrl: string; // e.g. https://dev00000.service-now.com
@@ -10,30 +10,85 @@ function authHeader(creds: SNCredentials): string {
   return "Basic " + Buffer.from(`${creds.username}:${creds.password}`).toString("base64");
 }
 
+const PATH_PLACEHOLDER = /\{([^}]+)\}/g;
+
+function defaultLocation(method: Tool["method"]): ParamLocation {
+  return method === "POST" || method === "PATCH" ? "body" : "query";
+}
+
+function resolveLocation(p: Parameter, method: Tool["method"], pathNames: Set<string>): ParamLocation {
+  if (p.in) return p.in;
+  if (pathNames.has(p.name)) return "path";
+  return defaultLocation(method);
+}
+
 // Maps tool parameters to a ServiceNow REST call.
-// For GET/DELETE: args become sysparm_* query params (Table API) or plain params.
-// For POST/PATCH: args become the JSON body.
+// - `{name}` placeholders in endpoint → substituted from path params
+// - body params → JSON body (flat object)
+// - query params → URL query string (Table API params mapped to sysparm_*)
 export async function callTool(
   tool: Tool,
   args: Record<string, unknown>,
   creds: SNCredentials
 ): Promise<unknown> {
   const baseUrl = creds.instanceUrl.replace(/\/$/, "");
-  let url = baseUrl + tool.endpoint;
+
+  const pathNames = new Set<string>();
+  for (const match of tool.endpoint.matchAll(PATH_PLACEHOLDER)) {
+    pathNames.add(match[1]!);
+  }
+
+  // Catch tool-definition mistakes early: param marked as path but endpoint has no slot for it.
+  for (const p of tool.parameters) {
+    if (p.in === "path" && !pathNames.has(p.name)) {
+      throw new Error(
+        `Tool "${tool.name}": parameter "${p.name}" is marked as a path parameter, ` +
+        `but the endpoint "${tool.endpoint}" has no {${p.name}} placeholder. ` +
+        `Add {${p.name}} to the endpoint URL.`
+      );
+    }
+  }
+
+  const buckets = { body: {} as Record<string, unknown>, query: {} as Record<string, unknown>, path: {} as Record<string, unknown> };
+
+  for (const p of tool.parameters) {
+    const value = args[p.name];
+    if (value === undefined || value === null) continue;
+    const loc = resolveLocation(p, tool.method, pathNames);
+    buckets[loc][p.name] = value;
+  }
+
+  // Pass through any args that weren't declared but match a path placeholder.
+  for (const name of pathNames) {
+    if (buckets.path[name] === undefined && args[name] !== undefined) {
+      buckets.path[name] = args[name];
+    }
+  }
+
+  // Substitute path placeholders.
+  let path = tool.endpoint.replace(PATH_PLACEHOLDER, (_, name: string) => {
+    const v = buckets.path[name];
+    if (v === undefined || v === null || v === "") {
+      throw new Error(`Missing required path parameter: ${name}`);
+    }
+    return encodeURIComponent(String(v));
+  });
+
+  // Query string.
+  const qs = buildQueryString(tool, buckets.query);
+  if (qs) path += (path.includes("?") ? "&" : "?") + qs;
+
+  const url = baseUrl + path;
 
   const headers: Record<string, string> = {
     Authorization: authHeader(creds),
     Accept: "application/json",
-    "Content-Type": "application/json",
   };
 
   let body: string | undefined;
-
-  if (tool.method === "GET" || tool.method === "DELETE") {
-    const qs = buildQueryString(tool, args);
-    if (qs) url += (url.includes("?") ? "&" : "?") + qs;
-  } else {
-    body = JSON.stringify(args);
+  if (Object.keys(buckets.body).length > 0) {
+    body = JSON.stringify(buckets.body);
+    headers["Content-Type"] = "application/json";
   }
 
   const res = await fetch(url, { method: tool.method, headers, body });
@@ -62,7 +117,6 @@ function buildQueryString(tool: Tool, args: Record<string, unknown>): string {
     if (value === undefined || value === null) continue;
 
     if (tool.apiType === "table") {
-      // Map named params → standard sysparm_* names the model can use naturally
       const snKey = TABLE_PARAM_MAP[key] ?? key;
       params.set(snKey, String(value));
     } else {
