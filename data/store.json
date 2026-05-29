@@ -110,7 +110,8 @@
               "name": "number",
               "description": "Change request Number",
               "type": "string",
-              "required": true
+              "required": true,
+              "in": "query"
             }
           ],
           "id": "28e6422a-d147-4e2d-9540-b8f737631683"
@@ -251,19 +252,97 @@
           "endpoint": "/api/now/table/sys_script",
           "apiType": "table",
           "parameters": [
-            { "name": "name", "description": "Business rule name", "type": "string", "required": true, "in": "body" },
-            { "name": "collection", "description": "Target table the rule runs on (e.g. 'incident')", "type": "string", "required": true, "in": "body" },
-            { "name": "script", "description": "Server-side JavaScript body. Has access to current, previous, gs.", "type": "string", "required": true, "in": "body" },
-            { "name": "when", "description": "When the rule runs: 'before', 'after', 'async', or 'display'", "type": "string", "required": true, "in": "body" },
-            { "name": "active", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "description", "description": "Human description of what this rule does", "type": "string", "required": false, "in": "body" },
-            { "name": "action_insert", "description": "Run on insert. 'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "action_update", "description": "Run on update. 'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "action_delete", "description": "Run on delete. 'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "action_query", "description": "Run on query. 'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "advanced", "description": "Advanced mode. 'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "order", "description": "Execution order (default 100)", "type": "number", "required": false, "in": "body" },
-            { "name": "abort_action", "description": "Abort the triggering action. 'true' or 'false'", "type": "string", "required": false, "in": "body" }
+            {
+              "name": "name",
+              "description": "Business rule name",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "collection",
+              "description": "Target table the rule runs on (e.g. 'incident')",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "script",
+              "description": "Server-side JavaScript body. Has access to current, previous, gs.",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "when",
+              "description": "When the rule runs: 'before', 'after', 'async', or 'display'",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "active",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "description",
+              "description": "Human description of what this rule does",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "action_insert",
+              "description": "Run on insert. 'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "action_update",
+              "description": "Run on update. 'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "action_delete",
+              "description": "Run on delete. 'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "action_query",
+              "description": "Run on query. 'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "advanced",
+              "description": "Advanced mode. 'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "order",
+              "description": "Execution order (default 100)",
+              "type": "number",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "abort_action",
+              "description": "Abort the triggering action. 'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            }
           ],
           "id": "79a988c3-9725-4c9d-b088-48205ed017f0"
         },
@@ -274,9 +353,27 @@
           "endpoint": "/api/now/table/sys_script",
           "apiType": "table",
           "parameters": [
-            { "name": "sysparm_query", "description": "Encoded query, e.g. 'collection=incident^nameLIKEvalidate'", "type": "string", "required": false, "in": "query" },
-            { "name": "sysparm_limit", "description": "Max rows to return (default 10 recommended)", "type": "number", "required": false, "in": "query" },
-            { "name": "sysparm_fields", "description": "Comma-separated fields. Recommended: 'sys_id,name,description'", "type": "string", "required": false, "in": "query" }
+            {
+              "name": "sysparm_query",
+              "description": "Encoded query, e.g. 'collection=incident^nameLIKEvalidate'",
+              "type": "string",
+              "required": false,
+              "in": "query"
+            },
+            {
+              "name": "sysparm_limit",
+              "description": "Max rows to return (default 10 recommended)",
+              "type": "number",
+              "required": false,
+              "in": "query"
+            },
+            {
+              "name": "sysparm_fields",
+              "description": "Comma-separated fields. Recommended: 'sys_id,name,description'",
+              "type": "string",
+              "required": false,
+              "in": "query"
+            }
           ],
           "id": "53f23b4a-dfa3-4354-a4c2-a71d03ce8329"
         },
@@ -287,8 +384,20 @@
           "endpoint": "/api/now/table/sys_script/{sys_id}",
           "apiType": "table",
           "parameters": [
-            { "name": "sys_id", "description": "sys_id of the Business Rule", "type": "string", "required": true, "in": "path" },
-            { "name": "sysparm_display_value", "description": "'true' for display values, 'false' for raw, 'all' for both", "type": "string", "required": false, "in": "query" }
+            {
+              "name": "sys_id",
+              "description": "sys_id of the Business Rule",
+              "type": "string",
+              "required": true,
+              "in": "path"
+            },
+            {
+              "name": "sysparm_display_value",
+              "description": "'true' for display values, 'false' for raw, 'all' for both",
+              "type": "string",
+              "required": false,
+              "in": "query"
+            }
           ],
           "id": "3581abab-ce9f-406d-ac50-4becee7d551a"
         },
@@ -299,20 +408,104 @@
           "endpoint": "/api/now/table/sys_script/{sys_id}",
           "apiType": "table",
           "parameters": [
-            { "name": "sys_id", "description": "sys_id of the Business Rule to update", "type": "string", "required": true, "in": "path" },
-            { "name": "script", "description": "Updated script body", "type": "string", "required": false, "in": "body" },
-            { "name": "name", "description": "Business rule name", "type": "string", "required": false, "in": "body" },
-            { "name": "collection", "description": "Target table", "type": "string", "required": false, "in": "body" },
-            { "name": "when", "description": "'before' | 'after' | 'async' | 'display'", "type": "string", "required": false, "in": "body" },
-            { "name": "active", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "description", "description": "Human description", "type": "string", "required": false, "in": "body" },
-            { "name": "action_insert", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "action_update", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "action_delete", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "action_query", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "advanced", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "order", "description": "Execution order", "type": "number", "required": false, "in": "body" },
-            { "name": "abort_action", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" }
+            {
+              "name": "sys_id",
+              "description": "sys_id of the Business Rule to update",
+              "type": "string",
+              "required": true,
+              "in": "path"
+            },
+            {
+              "name": "script",
+              "description": "Updated script body",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "name",
+              "description": "Business rule name",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "collection",
+              "description": "Target table",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "when",
+              "description": "'before' | 'after' | 'async' | 'display'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "active",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "description",
+              "description": "Human description",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "action_insert",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "action_update",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "action_delete",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "action_query",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "advanced",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "order",
+              "description": "Execution order",
+              "type": "number",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "abort_action",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            }
           ],
           "id": "c532d53a-1215-4c78-a92a-3b4aca3560ef"
         }
@@ -331,13 +524,55 @@
           "endpoint": "/api/now/table/sys_script_include",
           "apiType": "table",
           "parameters": [
-            { "name": "name", "description": "Script Include name (used as the class name)", "type": "string", "required": true, "in": "body" },
-            { "name": "script", "description": "Server-side JavaScript body (typically defines a class)", "type": "string", "required": true, "in": "body" },
-            { "name": "active", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "description", "description": "Human description", "type": "string", "required": false, "in": "body" },
-            { "name": "api_name", "description": "API name, e.g. 'global.MyHelper'", "type": "string", "required": false, "in": "body" },
-            { "name": "access", "description": "'package_private' or 'public'", "type": "string", "required": false, "in": "body" },
-            { "name": "client_callable", "description": "Allow client-side GlideAjax calls. 'true' or 'false'", "type": "string", "required": false, "in": "body" }
+            {
+              "name": "name",
+              "description": "Script Include name (used as the class name)",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "script",
+              "description": "Server-side JavaScript body (typically defines a class)",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "active",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "description",
+              "description": "Human description",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "api_name",
+              "description": "API name, e.g. 'global.MyHelper'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "access",
+              "description": "'package_private' or 'public'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "client_callable",
+              "description": "Allow client-side GlideAjax calls. 'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            }
           ],
           "id": "1d1a8384-4a0d-4c80-9a54-235340bb9bda"
         },
@@ -348,9 +583,27 @@
           "endpoint": "/api/now/table/sys_script_include",
           "apiType": "table",
           "parameters": [
-            { "name": "sysparm_query", "description": "Encoded query, e.g. 'nameLIKEMyHelper'", "type": "string", "required": false, "in": "query" },
-            { "name": "sysparm_limit", "description": "Max rows to return (default 10 recommended)", "type": "number", "required": false, "in": "query" },
-            { "name": "sysparm_fields", "description": "Comma-separated fields. Recommended: 'sys_id,name,description'", "type": "string", "required": false, "in": "query" }
+            {
+              "name": "sysparm_query",
+              "description": "Encoded query, e.g. 'nameLIKEMyHelper'",
+              "type": "string",
+              "required": false,
+              "in": "query"
+            },
+            {
+              "name": "sysparm_limit",
+              "description": "Max rows to return (default 10 recommended)",
+              "type": "number",
+              "required": false,
+              "in": "query"
+            },
+            {
+              "name": "sysparm_fields",
+              "description": "Comma-separated fields. Recommended: 'sys_id,name,description'",
+              "type": "string",
+              "required": false,
+              "in": "query"
+            }
           ],
           "id": "9c7d260e-8500-46e8-bbac-f718683fc655"
         },
@@ -361,8 +614,20 @@
           "endpoint": "/api/now/table/sys_script_include/{sys_id}",
           "apiType": "table",
           "parameters": [
-            { "name": "sys_id", "description": "sys_id of the Script Include", "type": "string", "required": true, "in": "path" },
-            { "name": "sysparm_display_value", "description": "'true' for display values, 'false' for raw, 'all' for both", "type": "string", "required": false, "in": "query" }
+            {
+              "name": "sys_id",
+              "description": "sys_id of the Script Include",
+              "type": "string",
+              "required": true,
+              "in": "path"
+            },
+            {
+              "name": "sysparm_display_value",
+              "description": "'true' for display values, 'false' for raw, 'all' for both",
+              "type": "string",
+              "required": false,
+              "in": "query"
+            }
           ],
           "id": "3556917c-781f-4c5d-abad-63a7c4e60cea"
         },
@@ -373,14 +638,62 @@
           "endpoint": "/api/now/table/sys_script_include/{sys_id}",
           "apiType": "table",
           "parameters": [
-            { "name": "sys_id", "description": "sys_id of the Script Include to update", "type": "string", "required": true, "in": "path" },
-            { "name": "script", "description": "Updated script body", "type": "string", "required": false, "in": "body" },
-            { "name": "name", "description": "Script Include name", "type": "string", "required": false, "in": "body" },
-            { "name": "active", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "description", "description": "Human description", "type": "string", "required": false, "in": "body" },
-            { "name": "api_name", "description": "API name, e.g. 'global.MyHelper'", "type": "string", "required": false, "in": "body" },
-            { "name": "access", "description": "'package_private' or 'public'", "type": "string", "required": false, "in": "body" },
-            { "name": "client_callable", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" }
+            {
+              "name": "sys_id",
+              "description": "sys_id of the Script Include to update",
+              "type": "string",
+              "required": true,
+              "in": "path"
+            },
+            {
+              "name": "script",
+              "description": "Updated script body",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "name",
+              "description": "Script Include name",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "active",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "description",
+              "description": "Human description",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "api_name",
+              "description": "API name, e.g. 'global.MyHelper'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "access",
+              "description": "'package_private' or 'public'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "client_callable",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            }
           ],
           "id": "9d5b7676-05be-4047-90e9-c5108441710e"
         }
@@ -399,16 +712,76 @@
           "endpoint": "/api/now/table/sys_script_client",
           "apiType": "table",
           "parameters": [
-            { "name": "name", "description": "Client script name", "type": "string", "required": true, "in": "body" },
-            { "name": "table", "description": "Table the script runs on (e.g. 'incident')", "type": "string", "required": true, "in": "body" },
-            { "name": "script", "description": "Client-side JavaScript body. Has access to g_form, g_user, etc.", "type": "string", "required": true, "in": "body" },
-            { "name": "type", "description": "'onLoad' | 'onChange' | 'onSubmit' | 'onCellEdit'", "type": "string", "required": true, "in": "body" },
-            { "name": "active", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "description", "description": "Human description", "type": "string", "required": false, "in": "body" },
-            { "name": "field", "description": "For 'onChange' scripts: the field name that triggers it", "type": "string", "required": false, "in": "body" },
-            { "name": "global", "description": "Global scope. 'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "isolate_script", "description": "Run in isolated scope. 'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "order", "description": "Execution order (default 100)", "type": "number", "required": false, "in": "body" }
+            {
+              "name": "name",
+              "description": "Client script name",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "table",
+              "description": "Table the script runs on (e.g. 'incident')",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "script",
+              "description": "Client-side JavaScript body. Has access to g_form, g_user, etc.",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "type",
+              "description": "'onLoad' | 'onChange' | 'onSubmit' | 'onCellEdit'",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "active",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "description",
+              "description": "Human description",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "field",
+              "description": "For 'onChange' scripts: the field name that triggers it",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "global",
+              "description": "Global scope. 'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "isolate_script",
+              "description": "Run in isolated scope. 'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "order",
+              "description": "Execution order (default 100)",
+              "type": "number",
+              "required": false,
+              "in": "body"
+            }
           ],
           "id": "31ea62ba-b77b-4407-8d84-88e51b8e2b9c"
         },
@@ -419,9 +792,27 @@
           "endpoint": "/api/now/table/sys_script_client",
           "apiType": "table",
           "parameters": [
-            { "name": "sysparm_query", "description": "Encoded query, e.g. 'table=incident^type=onLoad'", "type": "string", "required": false, "in": "query" },
-            { "name": "sysparm_limit", "description": "Max rows to return (default 10 recommended)", "type": "number", "required": false, "in": "query" },
-            { "name": "sysparm_fields", "description": "Comma-separated fields. Recommended: 'sys_id,name,description'", "type": "string", "required": false, "in": "query" }
+            {
+              "name": "sysparm_query",
+              "description": "Encoded query, e.g. 'table=incident^type=onLoad'",
+              "type": "string",
+              "required": false,
+              "in": "query"
+            },
+            {
+              "name": "sysparm_limit",
+              "description": "Max rows to return (default 10 recommended)",
+              "type": "number",
+              "required": false,
+              "in": "query"
+            },
+            {
+              "name": "sysparm_fields",
+              "description": "Comma-separated fields. Recommended: 'sys_id,name,description'",
+              "type": "string",
+              "required": false,
+              "in": "query"
+            }
           ],
           "id": "68d6bfd1-8485-4095-ad60-f791039d2506"
         },
@@ -432,8 +823,20 @@
           "endpoint": "/api/now/table/sys_script_client/{sys_id}",
           "apiType": "table",
           "parameters": [
-            { "name": "sys_id", "description": "sys_id of the Client Script", "type": "string", "required": true, "in": "path" },
-            { "name": "sysparm_display_value", "description": "'true' for display values, 'false' for raw, 'all' for both", "type": "string", "required": false, "in": "query" }
+            {
+              "name": "sys_id",
+              "description": "sys_id of the Client Script",
+              "type": "string",
+              "required": true,
+              "in": "path"
+            },
+            {
+              "name": "sysparm_display_value",
+              "description": "'true' for display values, 'false' for raw, 'all' for both",
+              "type": "string",
+              "required": false,
+              "in": "query"
+            }
           ],
           "id": "6af23b24-97e8-4a62-a5c3-b02a485b8c2a"
         },
@@ -444,19 +847,176 @@
           "endpoint": "/api/now/table/sys_script_client/{sys_id}",
           "apiType": "table",
           "parameters": [
-            { "name": "sys_id", "description": "sys_id of the Client Script to update", "type": "string", "required": true, "in": "path" },
-            { "name": "script", "description": "Updated script body", "type": "string", "required": false, "in": "body" },
-            { "name": "name", "description": "Client script name", "type": "string", "required": false, "in": "body" },
-            { "name": "table", "description": "Table the script runs on", "type": "string", "required": false, "in": "body" },
-            { "name": "type", "description": "'onLoad' | 'onChange' | 'onSubmit' | 'onCellEdit'", "type": "string", "required": false, "in": "body" },
-            { "name": "active", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "description", "description": "Human description", "type": "string", "required": false, "in": "body" },
-            { "name": "field", "description": "For 'onChange' scripts: the field name that triggers it", "type": "string", "required": false, "in": "body" },
-            { "name": "global", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "isolate_script", "description": "'true' or 'false'", "type": "string", "required": false, "in": "body" },
-            { "name": "order", "description": "Execution order", "type": "number", "required": false, "in": "body" }
+            {
+              "name": "sys_id",
+              "description": "sys_id of the Client Script to update",
+              "type": "string",
+              "required": true,
+              "in": "path"
+            },
+            {
+              "name": "script",
+              "description": "Updated script body",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "name",
+              "description": "Client script name",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "table",
+              "description": "Table the script runs on",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "type",
+              "description": "'onLoad' | 'onChange' | 'onSubmit' | 'onCellEdit'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "active",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "description",
+              "description": "Human description",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "field",
+              "description": "For 'onChange' scripts: the field name that triggers it",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "global",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "isolate_script",
+              "description": "'true' or 'false'",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "order",
+              "description": "Execution order",
+              "type": "number",
+              "required": false,
+              "in": "body"
+            }
           ],
           "id": "9c678631-7407-421f-a54e-fc819981a90f"
+        }
+      ]
+    },
+    {
+      "name": "server_mcp",
+      "description": "This mcp can be used to get details about a server in cmdb",
+      "port": 7890,
+      "id": "14adb29c-a0b3-4c46-8274-f5594b92fa0b",
+      "tools": [
+        {
+          "name": "get_server_details",
+          "description": "This mcp tool can be used to get the details of a server by sys_id",
+          "method": "GET",
+          "endpoint": "/api/now/table/cmdb_ci_server/{sys_id}",
+          "apiType": "table",
+          "parameters": [
+            {
+              "name": "sys_id",
+              "description": "This sysid of the server record",
+              "type": "string",
+              "required": true,
+              "in": "path"
+            }
+          ],
+          "id": "f76f42ff-33be-46fc-af63-900a280587a4"
+        },
+        {
+          "name": "get_server_by_name",
+          "description": "This tool can be used to get the server details by name",
+          "method": "GET",
+          "endpoint": "/api/now/table/cmdb_ci_server",
+          "apiType": "table",
+          "parameters": [
+            {
+              "name": "name",
+              "description": "This provides the name of the server",
+              "type": "string",
+              "required": true,
+              "in": "query"
+            }
+          ],
+          "id": "c646e5ea-4eaa-48f4-8608-3127f0455576"
+        }
+      ]
+    },
+    {
+      "name": "problem-mcp-server",
+      "description": "This server can be used to get problem data",
+      "port": 8900,
+      "id": "387bf8a0-b6db-4686-8d48-c5044c4cd957",
+      "tools": [
+        {
+          "name": "get_problem",
+          "description": "This tool can be used to get problem data",
+          "method": "GET",
+          "endpoint": "/api/now/table/problem",
+          "apiType": "table",
+          "parameters": [
+            {
+              "name": "number",
+              "description": "Problem number",
+              "type": "string",
+              "required": true,
+              "in": "query"
+            }
+          ],
+          "id": "e52f4f2b-1b71-450e-bba0-e0a1e7f8db21"
+        },
+        {
+          "name": "create_problem",
+          "description": "This tool can be used to create a problem ticket",
+          "method": "POST",
+          "endpoint": "/api/now/table/problem",
+          "apiType": "table",
+          "parameters": [
+            {
+              "name": "short_description",
+              "description": "this is the short description of the problem",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "description",
+              "description": "this is the description of the problem",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            }
+          ],
+          "id": "5c25c200-24eb-4625-b87c-65123d8a5e24"
         }
       ]
     }
