@@ -254,7 +254,7 @@
             },
             {
               "name": "std_change_template",
-              "description": "Standard change template version sys_id (standard changes only)",
+              "description": "Standard change template (std_change_record_producer) sys_id, standard changes only",
               "type": "string",
               "required": false,
               "in": "body"
@@ -455,7 +455,7 @@
             },
             {
               "name": "std_change_template",
-              "description": "std_change_template",
+              "description": "Standard change template (std_change_record_producer) sys_id, standard changes only",
               "type": "string",
               "required": false,
               "in": "body"

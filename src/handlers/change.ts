@@ -75,12 +75,17 @@ export async function loadChoices(
   const valid = fields.filter(isFieldName);
   const out: Record<string, { value: string; label: string }[]> = Object.fromEntries(valid.map((f) => [f, []]));
   if (valid.length === 0) return out;
+  // change_request inherits some columns (impact, urgency, priority) from task, whose choices
+  // live under name=task. A field's change_request choices, when present, replace task's.
   const rows = await sn.list(
     "sys_choice",
-    `name=change_request^elementIN${valid.join(",")}^inactive=false^language=en^ORDERBYsequence`,
-    { fields: ["element", "value", "label"], limit: 500 }
+    `nameINchange_request,task^elementIN${valid.join(",")}^inactive=false^language=en^ORDERBYsequence`,
+    { fields: ["name", "element", "value", "label", "sequence"], limit: 1000 }
   );
+  const own = new Set(rows.filter((r) => r.name === "change_request").map((r) => r.element));
+  rows.sort((a, b) => Number(a.sequence || 0) - Number(b.sequence || 0));
   for (const r of rows) {
+    if (r.name === "task" && own.has(r.element)) continue;
     const list = out[r.element];
     if (list && !list.some((c) => c.value === r.value)) list.push({ value: r.value, label: r.label });
   }
@@ -120,39 +125,47 @@ export async function search(sn: SNClient, kind: SearchKind, text: string, limit
     });
     return rows.map((r) => ({ sys_id: r.sys_id, label: r.name, detail: (r.description ?? "").slice(0, 80) }));
   }
-  // Standard change templates: published template versions.
+  // Standard change templates. The Change Management API's
+  // /change/standard/{id} takes the std_change_record_producer sys_id; the fields it sets
+  // come from that producer's current version's proposal.
   const rows = await sn.list(
-    "std_change_producer_version",
-    `${q ? `nameLIKE${q}^` : ""}std_change_producer.active=true^ORDERBYname`,
-    { fields: ["sys_id", "name", "version", "std_change_proposal"], limit: lim }
+    "std_change_record_producer",
+    `active=true${q ? `^nameLIKE${q}` : ""}^ORDERBYname`,
+    { fields: ["sys_id", "name", "short_description", "current_version"], limit: lim }
   );
   const results: SearchResult[] = [];
   for (const r of rows) {
     results.push({
       sys_id: r.sys_id,
       label: r.name,
-      detail: r.version ? `version ${r.version}` : "",
-      locked: await templateFields(sn, r.sys_id, val(r.std_change_proposal)),
+      detail: String(r.short_description ?? "").slice(0, 80),
+      locked: (await templateFields(sn, r.sys_id, val(r.current_version))) ?? {},
     });
   }
   return results;
 }
 
 // Fields a standard change template sets; the form locks these and submit ignores edits to them.
+// Returns undefined when the template doesn't exist or isn't active.
 export async function templateFields(
   sn: SNClient,
-  versionSysId: string,
-  proposalSysId?: string
+  producerSysId: string,
+  versionSysId?: string
 ): Promise<Record<string, string> | undefined> {
-  let proposal = proposalSysId;
-  if (!proposal) {
-    const v = await sn.get("std_change_producer_version", versionSysId, { fields: ["sys_id", "std_change_proposal"] });
-    if (!v) return undefined;
-    proposal = val(v.std_change_proposal);
+  let version = versionSysId;
+  if (!version) {
+    const p = await sn.get("std_change_record_producer", producerSysId, { fields: ["sys_id", "active", "current_version"] });
+    if (!p || String(p.active) !== "true") return undefined;
+    version = val(p.current_version);
   }
+  if (!version) return {};
+  const v = await sn.get("std_change_producer_version", version, { fields: ["std_change_proposal"] });
+  const proposal = val(v?.std_change_proposal);
   if (!proposal) return {};
-  const p = await sn.get("std_change_proposal", proposal, { fields: ["template_value"] });
-  return encodedQueryFields(String(p?.template_value ?? ""));
+  const pr = await sn.get("std_change_proposal", proposal, { fields: ["template_value"] });
+  const fields = encodedQueryFields(String(pr?.template_value ?? ""));
+  delete fields["type"]; // set by the endpoint itself
+  return fields;
 }
 
 async function resolveRef(
@@ -207,7 +220,7 @@ export async function validateAndBuild(
       errors.push({ field: "std_change_template", message: "Pick a template from the list" });
     } else {
       const fields = await templateFields(sn, template);
-      if (!fields) errors.push({ field: "std_change_template", message: "Template not found" });
+      if (!fields) errors.push({ field: "std_change_template", message: "Template not found or inactive" });
       else locked = fields;
     }
   }

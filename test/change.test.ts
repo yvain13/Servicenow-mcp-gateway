@@ -23,13 +23,17 @@ beforeEach(() => {
   const proposal = sn.insert("std_change_proposal", {
     template_value: "short_description=Reboot server^implementation_plan=Reboot^backout_plan=None^test_plan=Ping^EQ",
   });
-  tplVersion = sn.insert("std_change_producer_version", { name: "Reboot server", version: "1", std_change_proposal: proposal.sys_id });
-  for (const [element, value, label] of [
-    ["risk", "2", "High"],
-    ["risk", "3", "Moderate"],
-    ["category", "software", "Software"],
+  const version = sn.insert("std_change_producer_version", { name: "Reboot server - 1", version: "1", std_change_proposal: proposal.sys_id });
+  tplVersion = sn.insert("std_change_record_producer", { name: "Reboot server", active: "true", current_version: version.sys_id });
+  sn.insert("std_change_record_producer", { name: "Retired template", active: "false", current_version: version.sys_id });
+  for (const [name, element, value, label] of [
+    ["change_request", "risk", "2", "High"],
+    ["change_request", "risk", "3", "Moderate"],
+    ["task", "risk", "9", "task-level risk that change_request overrides"],
+    ["change_request", "category", "software", "Software"],
+    ["task", "impact", "1", "1 - High"],
   ]) {
-    sn.insert("sys_choice", { name: "change_request", element, value, label, inactive: "false", language: "en" });
+    sn.insert("sys_choice", { name, element, value, label, inactive: "false", language: "en" });
   }
 });
 
@@ -110,6 +114,12 @@ describe("change.submit", () => {
     expect(sn.tables["change_request"]![0]!["short_description"]).toBe("Reboot server");
   });
 
+  it("rejects an inactive template", async () => {
+    const retired = sn.tables["std_change_record_producer"]!.find((p) => p["active"] === "false")!;
+    const r = await submit(normal({ type: "standard", std_change_template: retired["sys_id"] }));
+    expect(r.structured!["errors"]).toContainEqual({ field: "std_change_template", message: "Template not found or inactive" });
+  });
+
   it("requires a template for standard changes", async () => {
     const r = await submit(normal({ type: "standard" }));
     expect((r.structured!["errors"] as any[]).map((e) => e.field)).toContain("std_change_template");
@@ -134,13 +144,14 @@ describe("change.submit", () => {
 
 describe("change lookups", () => {
   it("loads choices from sys_choice", async () => {
-    const r = await changeHandlers["change.choices"]!.fn({ fields: ["risk", "category"] }, ctxFor(sn));
+    const r = await changeHandlers["change.choices"]!.fn({ fields: ["risk", "category", "impact"] }, ctxFor(sn));
     expect(r.structured).toEqual({
       risk: [
         { value: "2", label: "High" },
         { value: "3", label: "Moderate" },
       ],
       category: [{ value: "software", label: "Software" }],
+      impact: [{ value: "1", label: "1 - High" }], // inherited from task
     });
   });
 
@@ -161,8 +172,9 @@ describe("change lookups", () => {
 
   it("returns template locks with template search results", async () => {
     const r = await changeHandlers["change.search"]!.fn({ kind: "template", text: "Reboot" }, ctxFor(sn));
-    const t = (r.structured!["results"] as any[])[0];
-    expect(t.locked).toMatchObject({ short_description: "Reboot server" });
+    const results = r.structured!["results"] as any[];
+    expect(results.map((x) => x.sys_id)).toEqual([tplVersion.sys_id]); // inactive templates excluded
+    expect(results[0].locked).toMatchObject({ short_description: "Reboot server" });
   });
 });
 

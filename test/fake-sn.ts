@@ -97,8 +97,9 @@ export class FakeSN {
     app.post("/api/sn_chg_rest/change/normal", (req, res) => res.json(createChange("normal", req.body)));
     app.post("/api/sn_chg_rest/change/emergency", (req, res) => res.json(createChange("emergency", req.body)));
     app.post("/api/sn_chg_rest/change/standard/:tpl", (req, res) => {
-      const ver = this.find("std_change_producer_version", req.params.tpl);
-      if (!ver) return res.status(404).json({ error: { message: "template not found" } });
+      const producer = this.find("std_change_record_producer", req.params.tpl);
+      const ver = producer && this.find("std_change_producer_version", producer["current_version"]);
+      if (!ver) return res.status(404).json({ error: { message: "Standard Change Template not found" } });
       const proposal = this.find("std_change_proposal", ver["std_change_proposal"]);
       const fromTemplate: Row = {};
       for (const part of String(proposal?.["template_value"] ?? "").split("^")) {
