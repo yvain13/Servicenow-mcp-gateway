@@ -96,6 +96,24 @@
   .section-head h3{font-family:var(--display);font-size:17px;font-weight:700}
   .section-head .count{font-family:var(--mono);font-size:12px;color:var(--ink-faint);margin-left:9px;font-weight:400}
   .tools{display:flex;flex-direction:column;gap:12px}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  .tabs button{font-family:var(--display);font-size:15px;font-weight:700;background:none;border:none;border-bottom:2px solid transparent;padding:8px 12px;cursor:pointer;color:var(--ink-faint)}
+  .tabs button.on{color:var(--ink);border-bottom-color:var(--canopy)}
+  .tabs .count{font-family:var(--mono);font-size:11px;font-weight:400;margin-left:6px}
+  .ui-badge{font-size:10px;font-weight:700;letter-spacing:.06em;padding:2px 7px;border-radius:5px;background:#E0E7FF;color:#3730A3;border:1px solid #C7D2FE}
+  .vis-badge{font-size:10px;font-weight:600;padding:2px 7px;border-radius:5px;background:var(--amber-soft);color:var(--warn)}
+  .verb.HANDLER{background:#EDE9FE;color:#5B21B6}
+  .tool-ui{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:12px;color:var(--ink-soft);flex-wrap:wrap}
+  .tool-ui select{font-family:var(--mono);font-size:11.5px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
+  .app-card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:15px 18px}
+  .app-card .uri{font-family:var(--mono);font-size:13px;color:var(--canopy-deep)}
+  .app-card .meta{font-size:12px;color:var(--ink-soft);margin-top:6px;line-height:1.6}
+  .bstat{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
+  .bstat.ok{background:var(--canopy-soft);color:var(--canopy)}
+  .bstat.missing{background:#FEE2E2;color:#B91C1C}
+  .flag-row{display:flex;gap:18px;align-items:center;margin-top:14px;font-size:12.5px;color:var(--ink-soft);flex-wrap:wrap}
+  .flag-row select{font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:6px}
+  .demo-warn{background:var(--amber-soft);color:var(--warn);border-radius:8px;padding:6px 10px;font-size:12px}
   .tool{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:17px 19px;transition:.16s}
   .tool:hover{border-color:var(--canopy-line);box-shadow:var(--shadow)}
   .tool-top{display:flex;align-items:center;gap:11px}
@@ -333,6 +351,7 @@ const API = '/api';
 let servers = [];
 let activeId = null;
 let activeServer = null;
+let detailTab = "tools";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 async function boot() {
@@ -427,25 +446,98 @@ async function renderDetail(s) {
       <div class="stat-grid">
         <div><span>Transport</span><b>Streamable HTTP</b></div>
         <div><span>Tools</span><b>${tools.length}</b></div>
+        <div><span>UI apps</span><b>${(s.apps||[]).length}</b></div>
+      </div>
+      <div class="flag-row">
+        <label><input type="checkbox" ${s.appsEnabled?'checked':''} onchange="setServerFlag('${s.id}',{appsEnabled:this.checked})"> Serve MCP Apps (ui:// resources)</label>
+        <label>Identity
+          <select onchange="setServerFlag('${s.id}',{identity:this.value})">
+            <option value="service" ${(s.identity||'service')==='service'?'selected':''}>Service account (.env)</option>
+            <option value="per-user" ${s.identity==='per-user'?'selected':''}>Per-user login (demo)</option>
+          </select>
+        </label>
+        ${s.identity==='per-user'?'<span class="demo-warn">Per-user demo mode: clients send their own ServiceNow login. PDI only, not for shared use.</span>':''}
       </div>
     </div>
 
-    <div class="section-head">
-      <h3>Tools <span class="count">${tools.length} attached</span></h3>
+    <div class="tabs">
+      <button class="${detailTab==='tools'?'on':''}" onclick="detailTab='tools';renderDetail(servers.find(x=>x.id==='${s.id}'))">Tools<span class="count">${tools.length}</span></button>
+      <button class="${detailTab==='apps'?'on':''}" onclick="detailTab='apps';renderDetail(servers.find(x=>x.id==='${s.id}'))">Apps<span class="count">${(s.apps||[]).length}</span></button>
     </div>
+    ${detailTab==='apps' ? `<div class="tools" id="appList"><div class="no-tools">Loading apps…</div></div>` : `
     <div class="tools" id="toolList">
-      ${tools.length ? tools.map(t => renderTool(t, s.id)).join('') : '<div class="no-tools">No tools yet — add one to get started.</div>'}
-    </div>`;
+      ${tools.length ? tools.map(t => renderTool(t, s)).join('') : '<div class="no-tools">No tools yet — add one to get started.</div>'}
+    </div>`}`;
+  if (detailTab === 'apps') renderApps(s);
 }
 
-function renderTool(t, serverId) {
+async function renderApps(s) {
+  const r = await api('GET', `/servers/${s.id}/apps`);
+  const el = document.getElementById('appList');
+  if (!el) return;
+  const apps = r.apps || [];
+  el.innerHTML = (r.appsEnabled ? '' : '<div class="no-tools">MCP Apps are off for this server: clients see tools only, as before.</div>') +
+    (apps.length ? apps.map(a => `<div class="app-card">
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="ui-badge">UI</span><span class="uri">${esc(a.uri)}</span>
+        <span class="bstat ${a.status.built?'ok':'missing'}" style="margin-left:auto">${a.status.built?'built':'not built'}</span>
+      </div>
+      <div class="meta"><b>${esc(a.name)}</b>${a.description?' — '+esc(a.description):''}<br>
+        Bundle <code>${esc(a.bundle)}</code>${a.status.built?` · ${(a.status.bytes/1024).toFixed(0)} KB · built ${esc(new Date(a.status.builtAt).toLocaleString())}`:' · run <code>npm run build:apps</code>'}<br>
+        Linked tools: ${a.tools.length?a.tools.map(n=>`<code>${esc(n)}</code>`).join(', '):'none'}
+      </div></div>`).join('') : '<div class="no-tools">No ui:// resources on this server. Apps are code bundles under apps/, declared in the server\'s "apps" list in data/store.json.</div>');
+}
+
+async function setServerFlag(id, patch) {
+  const r = await api('PATCH', `/servers/${id}`, patch);
+  if (r.error) { toast(r.error); return; }
+  await loadServers();
+  const s = servers.find(x => x.id === id);
+  if (s) renderDetail(s);
+  toast('Saved — applies to new client sessions');
+}
+
+async function setToolUI(serverId, toolId, field, value) {
+  const s = servers.find(x => x.id === serverId);
+  const t = s?.tools.find(x => x.id === toolId);
+  if (!t) return;
+  const ui = { ...(t.ui || {}) };
+  if (field === 'resourceUri') { if (value) ui.resourceUri = value; else delete ui.resourceUri; }
+  if (field === 'visibility') ui.visibility = value.split(',');
+  const empty = !ui.resourceUri && (!ui.visibility || ui.visibility.join(',') === 'model,app');
+  const r = await api('PUT', `/servers/${serverId}/tools/${toolId}`, { ui: empty ? null : ui });
+  if (r.error) { toast(r.error); return; }
+  await loadServers();
+  const s2 = servers.find(x => x.id === serverId);
+  if (s2) renderDetail(s2);
+  toast(`Updated ${t.name}`);
+}
+
+function renderTool(t, s) {
+  const serverId = s.id;
   const reqParams = t.parameters.filter(p => p.required);
   const optParams = t.parameters.filter(p => !p.required);
+  const isHandler = t.kind === 'handler';
+  const vis = (t.ui && t.ui.visibility && t.ui.visibility.length) ? t.ui.visibility.join(',') : 'model,app';
+  const apps = s.apps || [];
+  const uiRow = `<div class="tool-ui">
+      <label>App <select onchange="setToolUI('${serverId}','${t.id}','resourceUri',this.value)">
+        <option value="">— none —</option>
+        ${apps.map(a => `<option value="${esc(a.uri)}" ${t.ui && t.ui.resourceUri===a.uri?'selected':''}>${esc(a.uri)}</option>`).join('')}
+      </select></label>
+      <label>Visible to <select onchange="setToolUI('${serverId}','${t.id}','visibility',this.value)">
+        <option value="model,app" ${vis==='model,app'?'selected':''}>model + app</option>
+        <option value="model" ${vis==='model'?'selected':''}>model only</option>
+        <option value="app" ${vis==='app'?'selected':''}>app only</option>
+      </select></label>
+    </div>`;
   return `<div class="tool">
     <div class="tool-top">
-      <span class="verb ${t.method}">${esc(t.method)}</span>
+      <span class="verb ${isHandler ? 'HANDLER' : t.method}">${isHandler ? 'CODE' : esc(t.method)}</span>
       <span class="tool-name">${esc(t.name)}</span>
-      <span class="tool-kind">${t.apiType === 'table' ? 'Table API' : 'Scripted REST'}</span>
+      ${t.ui && t.ui.resourceUri ? '<span class="ui-badge" title="'+esc(t.ui.resourceUri)+'">UI</span>' : ''}
+      ${vis === 'app' ? '<span class="vis-badge">app-only</span>' : vis === 'model' ? '<span class="vis-badge">model-only</span>' : ''}
+      <span class="tool-kind">${isHandler ? 'Handler' : t.apiType === 'table' ? 'Table API' : 'Scripted REST'}</span>
       <div class="tool-actions">
         <button class="tool-edit" onclick="openEditTool('${serverId}','${t.id}')" title="Edit tool">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4z"/></svg>
@@ -454,11 +546,12 @@ function renderTool(t, serverId) {
       </div>
     </div>
     <p class="tool-desc">${esc(t.description || '')}</p>
-    <code class="endpoint">${esc(t.endpoint)}</code>
+    <code class="endpoint">${isHandler ? 'handler: ' + esc(t.handler || '') : esc(t.endpoint)}</code>
     <div class="params">
       ${reqParams.map(p => `<span class="param">${esc(p.name)}<span class="req">*</span></span>`).join('')}
       ${optParams.map(p => `<span class="param opt">${esc(p.name)}</span>`).join('')}
     </div>
+    ${apps.length || t.ui ? uiRow : ''}
   </div>`;
 }
 
@@ -523,9 +616,11 @@ async function createServer() {
 
 // ── Add / Edit Tool ───────────────────────────────────────────────────────────
 let editingToolId = null;
+let editingKind = "rest";
 
 function openAddTool() {
   editingToolId = null;
+  editingKind = "rest";
   document.getElementById('toolModalTitle').textContent = 'Add Tool';
   document.getElementById('toolModalSubmit').textContent = 'Save Tool';
   document.getElementById('paramRows').innerHTML = '';
@@ -543,6 +638,7 @@ function openEditTool(serverId, toolId) {
   const t = s?.tools.find(x => x.id === toolId);
   if (!t) return;
   editingToolId = toolId;
+  editingKind = t.kind || 'rest';
   document.getElementById('toolModalTitle').textContent = 'Edit Tool';
   document.getElementById('toolModalSubmit').textContent = 'Save Changes';
   document.getElementById('tl_name').value = t.name || '';
@@ -569,8 +665,12 @@ async function saveTool() {
     apiType: document.querySelector('#apiTypeSeg button.on')?.dataset.val || 'table',
     parameters: params
   };
-  if (!body.name || !body.endpoint) { showErr('toolErr','Name and endpoint are required'); return; }
   const isEdit = !!editingToolId;
+  if (isEdit && editingKind === 'handler') {
+    // Code-backed tools: only the model-facing name, description and parameters are editable here.
+    delete body.method; delete body.endpoint; delete body.apiType;
+    if (!body.name) { showErr('toolErr','Name is required'); return; }
+  } else if (!body.name || !body.endpoint) { showErr('toolErr','Name and endpoint are required'); return; }
   const t = isEdit
     ? await api('PUT', `/servers/${activeId}/tools/${editingToolId}`, body)
     : await api('POST', `/servers/${activeId}/tools`, body);

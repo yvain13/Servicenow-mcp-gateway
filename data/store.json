@@ -142,7 +142,7 @@
         },
         {
           "name": "create_change",
-          "description": "This tool can be used to create a change request",
+          "description": "Create a change request through the Change Management API (validated: required fields per type, future start, end after start, active CI and group). Prefer open_change_form when the client can show apps.",
           "method": "POST",
           "endpoint": "/api/now/table/change_request",
           "apiType": "table",
@@ -198,13 +198,514 @@
             },
             {
               "name": "type",
-              "description": "type of change default value - normal",
+              "description": "Change type: normal, standard or emergency (default normal)",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "cmdb_ci",
+              "description": "Configuration item: sys_id or exact name",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "assignment_group",
+              "description": "Assignment group: sys_id or exact name",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "start_date",
+              "description": "Planned start, ISO 8601 with time zone offset (e.g. 2026-11-14T22:00:00+01:00)",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "end_date",
+              "description": "Planned end, ISO 8601 with time zone offset",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "category",
+              "description": "Category value (sys_choice)",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "risk",
+              "description": "Risk value (sys_choice)",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "impact",
+              "description": "Impact value (sys_choice)",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "std_change_template",
+              "description": "Standard change template version sys_id (standard changes only)",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            }
+          ],
+          "id": "921e5c4e-f9c9-45dc-8535-55bf437400d9",
+          "kind": "handler",
+          "handler": "change.submit",
+          "ui": {
+            "visibility": [
+              "model"
+            ]
+          }
+        },
+        {
+          "name": "open_change_form",
+          "description": "Open an interactive change request form, prefilled with whatever you can infer from the conversation. The user reviews, completes and submits it. All fields are optional.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "type",
+              "description": "normal, standard or emergency",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "short_description",
+              "description": "Short description",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "description",
+              "description": "Description",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "ci_name",
+              "description": "Configuration item name, as the user said it",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "group_name",
+              "description": "Assignment group name",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "start_date",
+              "description": "Planned start, ISO 8601 with offset",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "end_date",
+              "description": "Planned end, ISO 8601 with offset",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "justification",
+              "description": "Justification",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "implementation_plan",
+              "description": "Implementation plan",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "risk_impact_analysis",
+              "description": "Risk and impact analysis",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "backout_plan",
+              "description": "Backout plan",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "test_plan",
+              "description": "Test plan",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "change.open_form",
+          "id": "5c1ec40a-978b-4f11-aaad-a9c34c1a9d35",
+          "ui": {
+            "resourceUri": "ui://change-ops/change-create",
+            "visibility": [
+              "model",
+              "app"
+            ]
+          }
+        },
+        {
+          "name": "change_choices",
+          "description": "Choice values for change_request fields from sys_choice.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [],
+          "kind": "handler",
+          "handler": "change.choices",
+          "id": "4db5eeca-097a-48ed-8cc8-2d397af4e1e9",
+          "ui": {
+            "resourceUri": "ui://change-ops/change-create",
+            "visibility": [
+              "app"
+            ]
+          },
+          "inputSchema": {
+            "properties": {
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Field names, e.g. category, risk, impact"
+              }
+            }
+          }
+        },
+        {
+          "name": "change_search",
+          "description": "Search configuration items, assignment groups or standard change templates.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "kind",
+              "description": "ci, group or template",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "text",
+              "description": "Search text",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "limit",
+              "description": "Max results (default 10)",
+              "type": "number",
+              "required": false,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "change.search",
+          "id": "e1123826-14af-49bb-9890-9e9cddebc3c5",
+          "ui": {
+            "resourceUri": "ui://change-ops/change-create",
+            "visibility": [
+              "app"
+            ]
+          }
+        },
+        {
+          "name": "change_submit",
+          "description": "Validate and create a change from the form.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "type",
+              "description": "type",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "std_change_template",
+              "description": "std_change_template",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "short_description",
+              "description": "short_description",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "description",
+              "description": "description",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "cmdb_ci",
+              "description": "cmdb_ci",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "assignment_group",
+              "description": "assignment_group",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "category",
+              "description": "category",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "risk",
+              "description": "risk",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "impact",
+              "description": "impact",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "start_date",
+              "description": "start_date",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "end_date",
+              "description": "end_date",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "justification",
+              "description": "justification",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "implementation_plan",
+              "description": "implementation_plan",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "risk_impact_analysis",
+              "description": "risk_impact_analysis",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "backout_plan",
+              "description": "backout_plan",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "test_plan",
+              "description": "test_plan",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "idempotency_key",
+              "description": "Per-form key; repeat submits return the first result",
               "type": "string",
               "required": true,
               "in": "body"
             }
           ],
-          "id": "921e5c4e-f9c9-45dc-8535-55bf437400d9"
+          "kind": "handler",
+          "handler": "change.submit",
+          "id": "2f7cbe92-bd82-42bd-8189-c6fca05f36b9",
+          "ui": {
+            "resourceUri": "ui://change-ops/change-create",
+            "visibility": [
+              "app"
+            ]
+          }
+        },
+        {
+          "name": "change_request_approval",
+          "description": "Move a normal change from New to Assess so approvals are generated.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "sys_id",
+              "description": "change_request sys_id",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "change.request_approval",
+          "id": "a6212999-7512-4807-a669-98ac24788169",
+          "ui": {
+            "resourceUri": "ui://change-ops/change-create",
+            "visibility": [
+              "app"
+            ]
+          }
+        },
+        {
+          "name": "open_change_approvals",
+          "description": "Open the approver's inbox of pending change approvals. You can summarise risk, but only the approver can approve or reject, in the app.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "limit",
+              "description": "Max approvals (default 25)",
+              "type": "number",
+              "required": false,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "approvals.list",
+          "id": "66918e7d-69d4-49a9-9538-accf58f4c6d3",
+          "ui": {
+            "resourceUri": "ui://change-ops/change-approvals",
+            "visibility": [
+              "model",
+              "app"
+            ]
+          }
+        },
+        {
+          "name": "change_approval_detail",
+          "description": "Full change, affected CIs, conflicts and approval history for one approval.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "approval_sys_id",
+              "description": "sysapproval_approver sys_id",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "approvals.detail",
+          "id": "5436b218-207d-483c-9416-be16610f475b",
+          "ui": {
+            "resourceUri": "ui://change-ops/change-approvals",
+            "visibility": [
+              "app"
+            ]
+          }
+        },
+        {
+          "name": "change_approval_decide",
+          "description": "Record the approver's decision. App-only: requires a human click.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "approval_sys_id",
+              "description": "sysapproval_approver sys_id",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "decision",
+              "description": "approved or rejected",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "comments",
+              "description": "Required when rejecting",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "approvals.decide",
+          "id": "4c55a555-4f32-4b09-8b72-32c86443607e",
+          "ui": {
+            "resourceUri": "ui://change-ops/change-approvals",
+            "visibility": [
+              "app"
+            ]
+          }
+        }
+      ],
+      "appsEnabled": true,
+      "identity": "service",
+      "apps": [
+        {
+          "uri": "ui://change-ops/change-create",
+          "name": "Change creation form",
+          "description": "Review, complete and submit a Normal, Standard or Emergency change.",
+          "bundle": "apps/change-create/dist/index.html"
+        },
+        {
+          "uri": "ui://change-ops/change-approvals",
+          "name": "Change approval inbox",
+          "description": "Review pending change approvals and approve or reject them.",
+          "bundle": "apps/change-approvals/dist/index.html"
         }
       ]
     },
@@ -348,7 +849,7 @@
         },
         {
           "name": "list_business_rules",
-          "description": "List Business Rules. Filter with sysparm_query, e.g. 'collection=incident' for rules on the incident table, 'nameLIKEvalidate' to search by name, or combine with ^ ('collection=incident^nameLIKEvalidate'). This tool returns a lightweight summary — pass sysparm_fields='sys_id,name,description' to keep responses small. Use get_business_rule for the full record including script.",
+          "description": "List Business Rules. Filter with sysparm_query, e.g. 'collection=incident' for rules on the incident table, 'nameLIKEvalidate' to search by name, or combine with ^ ('collection=incident^nameLIKEvalidate'). This tool returns a lightweight summary \u2014 pass sysparm_fields='sys_id,name,description' to keep responses small. Use get_business_rule for the full record including script.",
           "method": "GET",
           "endpoint": "/api/now/table/sys_script",
           "apiType": "table",
@@ -519,7 +1020,7 @@
       "tools": [
         {
           "name": "create_script_include",
-          "description": "Create a Script Include — reusable server-side JavaScript. 'api_name' defaults to 'global.<name>'. 'access' is 'package_private' or 'public'. Set 'client_callable' to 'true' to expose it via GlideAjax.",
+          "description": "Create a Script Include \u2014 reusable server-side JavaScript. 'api_name' defaults to 'global.<name>'. 'access' is 'package_private' or 'public'. Set 'client_callable' to 'true' to expose it via GlideAjax.",
           "method": "POST",
           "endpoint": "/api/now/table/sys_script_include",
           "apiType": "table",
@@ -578,7 +1079,7 @@
         },
         {
           "name": "list_script_includes",
-          "description": "List Script Includes. Filter with sysparm_query, e.g. 'nameLIKEMyHelper' or 'client_callable=true'. Returns a lightweight summary — pass sysparm_fields='sys_id,name,description' to keep responses small. Use get_script_include for the full script body.",
+          "description": "List Script Includes. Filter with sysparm_query, e.g. 'nameLIKEMyHelper' or 'client_callable=true'. Returns a lightweight summary \u2014 pass sysparm_fields='sys_id,name,description' to keep responses small. Use get_script_include for the full script body.",
           "method": "GET",
           "endpoint": "/api/now/table/sys_script_include",
           "apiType": "table",
@@ -787,7 +1288,7 @@
         },
         {
           "name": "list_client_scripts",
-          "description": "List Client Scripts. Filter with sysparm_query, e.g. 'table=incident' for scripts on incident, 'nameLIKEvalidate' to match name, or combine with ^ ('table=incident^type=onLoad'). Returns a lightweight summary — pass sysparm_fields='sys_id,name,description' to keep responses small. Use get_client_script for the full script body.",
+          "description": "List Client Scripts. Filter with sysparm_query, e.g. 'table=incident' for scripts on incident, 'nameLIKEvalidate' to match name, or combine with ^ ('table=incident^type=onLoad'). Returns a lightweight summary \u2014 pass sysparm_fields='sys_id,name,description' to keep responses small. Use get_client_script for the full script body.",
           "method": "GET",
           "endpoint": "/api/now/table/sys_script_client",
           "apiType": "table",
@@ -1017,6 +1518,74 @@
             }
           ],
           "id": "5c25c200-24eb-4625-b87c-65123d8a5e24"
+        }
+      ]
+    },
+    {
+      "name": "apps-demo",
+      "description": "Sample MCP App (Phase 1 foundation check): renders a hello app that calls an app-only tool.",
+      "port": 7830,
+      "id": "1b5c4fc3-75e4-46d3-8d51-fb9df04e5bc2",
+      "appsEnabled": true,
+      "apps": [
+        {
+          "uri": "ui://apps-demo/hello",
+          "name": "Hello app",
+          "description": "Minimal MCP App",
+          "bundle": "apps/hello/dist/index.html"
+        }
+      ],
+      "tools": [
+        {
+          "name": "open_hello",
+          "description": "Open the hello sample app.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "name",
+              "description": "Who to greet",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "demo.open_hello",
+          "id": "d2c372b5-4594-439f-825d-2363a3948357",
+          "ui": {
+            "resourceUri": "ui://apps-demo/hello",
+            "visibility": [
+              "model",
+              "app"
+            ]
+          }
+        },
+        {
+          "name": "hello_echo",
+          "description": "Echo a message back (app-only).",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "message",
+              "description": "Message",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "demo.echo",
+          "id": "11991765-b978-4438-900e-dcaad49e95ba",
+          "ui": {
+            "resourceUri": "ui://apps-demo/hello",
+            "visibility": [
+              "app"
+            ]
+          }
         }
       ]
     }

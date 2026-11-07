@@ -1,0 +1,89 @@
+/* Shared look for gateway apps. Host style variables win; fallbacks follow data-theme. */
+:root {
+  --bg: var(--color-background-primary, #ffffff);
+  --bg2: var(--color-background-secondary, #f5f6f8);
+  --fg: var(--color-text-primary, #16181d);
+  --fg2: var(--color-text-secondary, #5b6170);
+  --line: var(--color-border-primary, #d9dce3);
+  --accent: var(--color-ring-primary, #2563eb);
+  --danger: var(--color-text-danger, #b42318);
+  --danger-bg: var(--color-background-danger, #fdecea);
+  --ok: var(--color-text-success, #0f7b3e);
+  --ok-bg: var(--color-background-success, #e7f6ec);
+  --warn-bg: var(--color-background-warning, #fff6e0);
+  --radius: var(--border-radius-md, 8px);
+  --font: var(--font-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+  --mono: var(--font-mono, ui-monospace, Menlo, monospace);
+  color-scheme: light;
+}
+[data-theme="dark"] {
+  --bg: var(--color-background-primary, #17191e);
+  --bg2: var(--color-background-secondary, #20232a);
+  --fg: var(--color-text-primary, #eceef2);
+  --fg2: var(--color-text-secondary, #a2a8b5);
+  --line: var(--color-border-primary, #343844);
+  --accent: var(--color-ring-primary, #6b9bff);
+  --danger: var(--color-text-danger, #ff8a80);
+  --danger-bg: var(--color-background-danger, #3a1d1b);
+  --ok: var(--color-text-success, #6fdc9a);
+  --ok-bg: var(--color-background-success, #17301f);
+  --warn-bg: var(--color-background-warning, #3a3018);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); }
+body { padding: 14px; }
+h1 { font-size: 16px; margin: 0 0 10px; }
+h2 { font-size: 14px; margin: 14px 0 6px; }
+.muted { color: var(--fg2); }
+.mono { font-family: var(--mono); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row > * { flex: 1 1 200px; min-width: 0; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.field label { font-size: 12px; font-weight: 600; color: var(--fg2); }
+.field label .req { color: var(--danger); margin-left: 2px; }
+.field .err { color: var(--danger); font-size: 12px; min-height: 0; }
+.field.invalid input, .field.invalid textarea, .field.invalid select, .field.invalid .seg { border-color: var(--danger); }
+input, textarea, select {
+  font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 7px 9px; width: 100%;
+}
+input:disabled, textarea:disabled, select:disabled { background: var(--bg2); color: var(--fg2); }
+textarea { resize: vertical; min-height: 60px; }
+input:focus, textarea:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button {
+  font: inherit; cursor: pointer; border-radius: var(--radius); border: 1px solid var(--line);
+  background: var(--bg2); color: var(--fg); padding: 7px 14px;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent); color: #fff; }
+.banner { padding: 8px 10px; border-radius: var(--radius); margin-bottom: 10px; }
+.banner.error { background: var(--danger-bg); color: var(--danger); }
+.banner.ok { background: var(--ok-bg); color: var(--ok); }
+.banner.warn { background: var(--warn-bg); }
+.actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.card { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; background: var(--bg); }
+.pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--bg2); border: 1px solid var(--line); }
+.typeahead { position: relative; }
+.typeahead .menu {
+  position: absolute; z-index: 5; left: 0; right: 0; top: 100%; margin-top: 2px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: var(--radius); max-height: 220px; overflow: auto; box-shadow: 0 6px 18px rgba(0,0,0,.15);
+}
+.typeahead .menu div { padding: 6px 9px; cursor: pointer; }
+.typeahead .menu div:hover, .typeahead .menu div.active { background: var(--bg2); }
+.typeahead .menu small { color: var(--fg2); display: block; }
+.shell-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px;
+}
+.shell-dialog { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 16px; max-width: 440px; width: 100%; }
+.shell-dialog dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 10px 0; }
+.shell-dialog dt { color: var(--fg2); }
+.shell-dialog dd { margin: 0; overflow-wrap: anywhere; }
+.shell-loading { padding: 24px; text-align: center; color: var(--fg2); }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }

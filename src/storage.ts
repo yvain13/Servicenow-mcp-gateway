@@ -5,7 +5,8 @@ import { randomUUID } from "crypto";
 import type { Store, MCPServer, Tool, InstanceConfig } from "./types.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const DATA_FILE = join(__dir, "../data/store.json");
+// STORE_FILE overrides the location (used by tests).
+const DATA_FILE = process.env["STORE_FILE"] ?? join(__dir, "../data/store.json");
 
 const EMPTY: Store = { instance: null, servers: [] };
 
@@ -50,6 +51,18 @@ export function createServer(
   const store = read();
   const server: MCPServer = { ...data, id: randomUUID(), tools: [] };
   store.servers.push(server);
+  write(store);
+  return server;
+}
+
+export function updateServer(
+  id: string,
+  patch: Partial<Pick<MCPServer, "description" | "appsEnabled" | "apps" | "identity">>
+): MCPServer {
+  const store = read();
+  const server = store.servers.find((s) => s.id === id);
+  if (!server) throw new Error(`Server ${id} not found`);
+  Object.assign(server, patch);
   write(store);
   return server;
 }

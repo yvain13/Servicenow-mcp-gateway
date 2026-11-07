@@ -13,15 +13,53 @@ export interface Parameter {
   in?: ParamLocation;
 }
 
+export type ToolVisibility = "model" | "app";
+
+// Links a tool to a ui:// resource (MCP Apps). Hosts that support MCP Apps render the
+// resource when the model calls the tool; `visibility: ["app"]` hides it from the model.
+export interface ToolUI {
+  resourceUri?: string; // ui://change-ops/change-create
+  visibility?: ToolVisibility[]; // default ["model", "app"]
+}
+
+export type ToolKind = "rest" | "handler";
+
 export interface Tool {
   id: string;
   name: string;
   description: string;
+  // REST tools (kind "rest", the default) use method/endpoint/apiType.
   method: HttpMethod;
   endpoint: string;
   apiType: ApiType;
   parameters: Parameter[];
+  kind?: ToolKind; // default "rest" = callTool() in servicenow.ts
+  handler?: string; // e.g. "change.submit", resolved from src/handlers
+  ui?: ToolUI;
+  // Extra JSON Schema for complex inputs (arrays, objects) that `parameters` can't express.
+  // Merged over the schema built from `parameters`.
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
 }
+
+export interface UIAppCsp {
+  connectDomains?: string[];
+  resourceDomains?: string[];
+}
+
+export interface UIApp {
+  uri: string; // ui://change-ops/change-create
+  name: string;
+  description?: string;
+  bundle: string; // apps/change-create/dist/index.html (relative to the project root)
+  csp?: UIAppCsp;
+}
+
+// How callers are identified to ServiceNow.
+// - "service": the gateway's shared service account from .env (default).
+// - "per-user": each MCP client sends its own ServiceNow login as an
+//   `Authorization: Basic ...` header on the MCP endpoint (demo only, PDI use).
+export type IdentityMode = "service" | "per-user";
 
 export interface MCPServer {
   id: string;
@@ -29,6 +67,9 @@ export interface MCPServer {
   description: string;
   port: number;
   tools: Tool[];
+  appsEnabled?: boolean; // serve ui:// resources and _meta.ui (default false)
+  apps?: UIApp[];
+  identity?: IdentityMode;
 }
 
 export interface InstanceConfig {

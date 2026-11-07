@@ -16,7 +16,8 @@ export class MCPManager {
 
   async start(server: MCPServer): Promise<void> {
     if (this.instances.has(server.id)) return; // already running
-    const inst = new MCPInstance(server, this.creds);
+    // Pass a getter, not a snapshot, so updateCreds() reaches running servers.
+    const inst = new MCPInstance(server, () => this.creds);
     await inst.start();
     this.instances.set(server.id, inst);
   }
@@ -31,6 +32,10 @@ export class MCPManager {
   async restart(server: MCPServer): Promise<void> {
     await this.stop(server.id);
     await this.start(server);
+  }
+
+  getCreds(): SNCredentials {
+    return this.creds;
   }
 
   isRunning(serverId: string): boolean {
