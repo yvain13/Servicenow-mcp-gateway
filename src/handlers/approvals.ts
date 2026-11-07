@@ -145,6 +145,50 @@ const ERR_TEXT = {
 };
 
 export const approvalHandlers: HandlerRegistry = {
+  // Approval status for one change, shown in the change form after Request approval.
+  // Marks which approvals the caller can act on, so the form can offer Approve/Reject.
+  "approvals.for_change": {
+    async fn(args, ctx) {
+      const changeId = str(args["change_sys_id"]);
+      if (!isSysId(changeId)) return errorResult("bad_request", "change_sys_id must be a change_request sys_id");
+      const change = await ctx.sn.get("change_request", changeId, {
+        fields: ["number", "state", "approval"],
+        displayValue: "all",
+      });
+      if (!change) return errorResult("not_found", "Change not found");
+      const rows = await ctx.sn.list("sysapproval_approver", `sysapproval=${changeId}^ORDERBYsys_created_on`, {
+        fields: ["sys_id", "approver", "state"],
+        limit: 100,
+        displayValue: "all",
+      });
+      const caller = await requireCaller(ctx);
+      const mineIds = caller ? (await approverIdsFor(ctx.sn, caller)).ids : [];
+      const approvals = rows.map((r) => ({
+        approval_sys_id: val(r.sys_id),
+        approver: disp(r.approver),
+        state: val(r.state),
+        state_label: disp(r.state),
+        mine: mineIds.includes(val(r.approver)),
+      }));
+      const out = {
+        change: { number: disp(change.number), state: disp(change.state), approval: disp(change.approval) },
+        approvals,
+        decisions_enabled: ctx.caller.mode === "user",
+        caller: ctx.caller.displayName ?? ctx.caller.username,
+      };
+      const pending = approvals.filter((a) => a.state === "requested");
+      return {
+        text:
+          `${out.change.number} is ${out.change.state} (approval: ${out.change.approval}). ` +
+          (approvals.length
+            ? approvals.map((a) => `${a.approver}: ${a.state_label}`).join("; ")
+            : "No approvals generated yet.") +
+          (pending.some((a) => a.mine) ? ` ${out.caller} has a pending approval.` : ""),
+        structured: out,
+      };
+    },
+  },
+
   "approvals.list": {
     async fn(args, ctx) {
       const limit = Math.min(Math.max(1, Number(args["limit"] ?? 25) || 25), 100);

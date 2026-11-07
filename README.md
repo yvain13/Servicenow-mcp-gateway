@@ -93,6 +93,8 @@ How it works:
 
 > `create_change` gained optional `cmdb_ci`, `assignment_group`, `start_date`, `end_date`, `category`, `risk`, `impact` and `std_change_template` parameters, and now enforces the same validation, so calls that omit a CI, group or window are rejected with field errors instead of creating an incomplete record. `cmdb_ci` and `assignment_group` accept a sys_id or an exact name.
 
+After **Request approval**, the form shows the approvals ServiceNow generated for the change (via the app-only `change_approval_status` tool), refreshing until they appear. If one of them is the caller's, the form shows Approve and Reject in place, using the same `change_approval_decide` tool as the inbox, and then shows the change move on. To demo it on a PDI as `admin`, assign the change to a group admin belongs to (on a stock PDI, **Team Development Code Reviewers**), set change-ops identity to **Per-user login (demo)**, and connect with admin's login as shown below.
+
 ### Change approval and identity
 
 `change_approval_decide` writes `state` and `comments` to `sysapproval_approver`; ServiceNow's workflow moves the change on from there. It re-reads the approval first and returns `stale` if it was decided or reassigned elsewhere, or `not_yours` if the caller isn't the approver or an active delegate. It is app-only, so the model can open the inbox and discuss risk but not record a decision.

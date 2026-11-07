@@ -87,3 +87,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .shell-loading { padding: 24px; text-align: center; color: var(--fg2); }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.approvals { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 4px; }
+.appr-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.pill.state-approved { background: var(--ok-bg); color: var(--ok); }
+.pill.state-rejected { background: var(--danger-bg); color: var(--danger); }
+.decide { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
