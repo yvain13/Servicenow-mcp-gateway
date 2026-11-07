@@ -10,6 +10,8 @@ import type { SNCredentials } from "./servicenow.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const MANAGEMENT_PORT = Number(process.env["MANAGEMENT_PORT"] ?? 3001);
+// The management UI can edit tools and credentials, so it binds to localhost unless overridden.
+const MANAGEMENT_HOST = process.env["MANAGEMENT_HOST"] ?? "127.0.0.1";
 
 function credsFromEnv(): SNCredentials {
   return {
@@ -34,10 +36,10 @@ async function main(): Promise<void> {
 
   const app = express();
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: "1mb" }));
 
   // Management REST API
-  app.use("/api", buildRouter(manager, credsFromEnv));
+  app.use("/api", buildRouter(manager, () => manager.getCreds()));
 
   // Serve the UI
   app.use(express.static(join(__dir, "../public")));
@@ -45,7 +47,7 @@ async function main(): Promise<void> {
     res.sendFile(join(__dir, "../public/index.html"));
   });
 
-  app.listen(MANAGEMENT_PORT, () => {
+  app.listen(MANAGEMENT_PORT, MANAGEMENT_HOST, () => {
     console.log(`\n  Management UI  →  http://localhost:${MANAGEMENT_PORT}`);
     console.log(`  API base       →  http://localhost:${MANAGEMENT_PORT}/api\n`);
   });

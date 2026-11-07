@@ -6,7 +6,7 @@ export interface SNCredentials {
   password: string;
 }
 
-function authHeader(creds: SNCredentials): string {
+export function authHeader(creds: SNCredentials): string {
   return "Basic " + Buffer.from(`${creds.username}:${creds.password}`).toString("base64");
 }
 
