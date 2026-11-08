@@ -373,13 +373,14 @@
           <div class="field">
             <label><span id="ap_editorLabel">Spec (JSON)</span>
               <span class="hint"><a href="#" onclick="loadStarter();return false">load starter</a></span>
-              <span class="hint" id="ap_fileWrap" style="display:none"> · <label style="display:inline;font-weight:400;cursor:pointer;text-decoration:underline">attach .html<input type="file" accept=".html,.htm,text/html" id="ap_file" style="display:none" onchange="attachHtml(this)"></label></span>
+              <span class="hint" id="ap_fileWrap" style="display:none"> · <label style="display:inline;font-weight:400;cursor:pointer;text-decoration:underline">attach .html (standard MCP Apps SDK or gw)<input type="file" accept=".html,.htm,text/html" id="ap_file" style="display:none" onchange="attachHtml(this)"></label></span>
             </label>
             <textarea id="ap_code" class="code" spellcheck="false" oninput="appDirty()"></textarea>
           </div>
-          <label style="font-size:12.5px;color:var(--ink-soft);display:flex;gap:8px;align-items:center" id="ap_launcherRow">
-            <input type="checkbox" id="ap_launcher" checked> Add a tool <code id="ap_launcherName">open_…</code> the model calls to open this app
-          </label>
+          <div class="field" id="ap_launcherRow">
+            <label>Opened by <span class="hint">the tool Claude calls to show this app</span></label>
+            <select id="ap_openWith" onchange="syncResultTool()"></select>
+          </div>
           <div id="ap_report"></div>
         </div>
         <div>
@@ -591,6 +592,10 @@ async function openAppBuilder(serverId, slug) {
   appB = { serverId, slug: slug || null, type: null, drafts: {}, templates: appB.templates };
   if (!appB.templates) appB.templates = await api('GET', '/app-kit/templates');
   const srv = servers.find(x => x.id === serverId);
+  const ow = document.getElementById('ap_openWith');
+  ow.innerHTML = `<option value="">A new tool open_…</option>` +
+    (srv ? srv.tools : []).filter(t => t.handler !== 'app.open').map(t => `<option value="${esc(t.name)}">Existing tool: ${esc(t.name)}${t.ui && t.ui.resourceUri ? ' (re-link)' : ''}</option>`).join('') +
+    `<option value="-">No tool (link one later)</option>`;
   const sel = document.getElementById('ap_resultTool');
   sel.innerHTML = '<option value="">— none —</option>' + (srv ? srv.tools : []).filter(t => t.method === 'GET' || t.kind === 'handler')
     .map(t => `<option>${esc(t.name)}</option>`).join('');
@@ -599,7 +604,7 @@ async function openAppBuilder(serverId, slug) {
   document.getElementById('ap_input').value = '{}';
   document.getElementById('ap_goal').value = '';
   document.getElementById('appModalTitle').textContent = slug ? 'Edit app' : 'New app';
-  document.getElementById('ap_launcherRow').style.display = slug ? 'none' : 'flex';
+  document.getElementById('ap_launcherRow').style.display = slug ? 'none' : 'block';
   if (slug) {
     const r = await api('GET', `/servers/${serverId}/apps/${slug}/source`);
     const list = await api('GET', `/servers/${serverId}/apps`);
@@ -636,7 +641,15 @@ function loadStarter() { document.getElementById('ap_code').value = starterFor(a
 
 function appDirty() {
   const name = v('ap_name') || (appB.type === 'html' ? 'my app' : (() => { try { return JSON.parse(v('ap_code')).title || 'app'; } catch { return 'app'; } })());
-  document.getElementById('ap_launcherName').textContent = 'open_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+  const opt = document.querySelector('#ap_openWith option[value=""]');
+  if (opt) opt.textContent = 'A new tool open_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+}
+
+// When an existing tool opens the app, the preview feeds the app that tool's result.
+function syncResultTool() {
+  const ow = document.getElementById('ap_openWith').value;
+  const rs = document.getElementById('ap_resultTool');
+  if (ow && ow !== '-' && [...rs.options].some(o => o.value === ow)) rs.value = ow;
 }
 
 function attachHtml(input) {
@@ -661,11 +674,20 @@ function appDraft() {
 function renderReport(rep) {
   const box = document.getElementById('ap_report');
   const tools = (rep.tools || []).map(t => `<code>${esc(t.name)}</code>${t.write ? ' (write)' : ''}`).join(', ');
+  const fmt = rep.format === 'standard' ? ' · <span class="ui-badge">STANDARD SDK</span>' : rep.format === 'kit' ? ' · <span class="vis-badge">gateway gw</span>' : '';
   box.innerHTML = `<div class="vreport ${rep.ok ? 'ok' : 'bad'}">
-    <b>${rep.ok ? 'Looks good' : `${rep.errors.length} error${rep.errors.length === 1 ? '' : 's'}`}</b>${tools ? ` · calls ${tools}` : ''}
+    <b>${rep.ok ? 'Looks good' : `${rep.errors.length} error${rep.errors.length === 1 ? '' : 's'}`}</b>${fmt}${tools ? ` · calls ${tools}` : ''}
     ${rep.errors.length ? `<ul>${rep.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
     ${rep.warnings.length ? `<ul>${rep.warnings.map(e => `<li class="w">${esc(e)}</li>`).join('')}</ul>` : ''}
+    ${(rep.notes || []).length ? `<ul>${rep.notes.map(e => `<li style="color:var(--ink-soft)">${esc(e)}</li>`).join('')}</ul>` : ''}
   </div>`;
+  // A page that renders its opener's result should be opened by a data tool, not a new open_ tool.
+  const ow = document.getElementById('ap_openWith');
+  if (rep.showsResult && ow && ow.value === '' && !appB.slug) {
+    const opts = [...ow.options];
+    const list = opts.find(o => /^list_/.test(o.value)) || opts.find(o => /^(search|get)_/.test(o.value));
+    if (list) { ow.value = list.value; syncResultTool(); }
+  }
 }
 
 async function validateApp() {
@@ -688,13 +710,15 @@ async function saveApp() {
   if (!(await validateApp())) { showErr('appErr', 'Fix the errors above before saving.'); return; }
   const d = appDraft();
   if (!d.name) { showErr('appErr', 'Give the app a name.'); return; }
-  d.launcher = document.getElementById('ap_launcher').checked;
+  const ow = document.getElementById('ap_openWith').value;
+  if (ow === '-') d.launcher = false;
+  else if (ow) d.openWith = ow;
   const r = appB.slug
     ? await api('PUT', `/servers/${appB.serverId}/apps/${appB.slug}`, d)
     : await api('POST', `/servers/${appB.serverId}/apps`, d);
   if (r.error) { if (r.report) renderReport(r.report); showErr('appErr', r.error); return; }
   closeModal('appModal');
-  toast(appB.slug ? 'App updated' : `App created${r.launcher ? ` with tool ${r.launcher.name}` : ''}. Reconnect the MCP client to see it.`);
+  toast(appB.slug ? 'App updated' : `App created${r.launcher ? `, opened by ${r.launcher.name}` : ''}. Reconnect the MCP client to see it.`);
   await loadServers();
   const s = servers.find(x => x.id === appB.serverId);
   detailTab = 'apps';

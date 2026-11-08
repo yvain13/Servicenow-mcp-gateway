@@ -30,7 +30,21 @@ if (only.length === 0 || only.includes("_kit")) {
       watch: watch ? {} : undefined,
     },
   });
-  console.log("[apps] built App Kit → apps/_kit/dist/kit.js");
+  // The official SDK for standard HTML apps, as window.McpExtApps.
+  await build({
+    configFile: false,
+    root: kitDir,
+    logLevel: "warn",
+    build: {
+      lib: { entry: join(kitDir, "ext-apps.ts"), formats: ["iife"], name: "McpExtAppsBuild", fileName: () => "ext-apps.js" },
+      outDir: join(kitDir, "dist"),
+      emptyOutDir: false,
+      target: "es2022",
+      minify: true,
+      watch: watch ? {} : undefined,
+    },
+  });
+  console.log("[apps] built App Kit → apps/_kit/dist/kit.js, ext-apps.js");
 }
 
 for (const app of apps) {

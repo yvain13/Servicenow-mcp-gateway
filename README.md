@@ -133,7 +133,7 @@ Most apps don't need a build. In the management UI, open a server's **Apps** tab
 | **Form** | Fields → one submit tool (e.g. create an incident) | JSON spec |
 | **Table / chart** | Rows from a read tool as a table, bar chart (count by a field) or stat tiles | JSON spec |
 | **Approval cards** | One card per row with buttons that call a tool (approve, reject, close…) | JSON spec |
-| **HTML file** | Anything else: attach one self-contained `.html` | HTML that calls `gw.call()` |
+| **HTML file** | Anything else: attach one self-contained `.html` | A standard MCP App (official SDK), or HTML that calls `gw.call()` |
 
 The builder gives you:
 
@@ -169,16 +169,37 @@ Templates in `args`:
 
 ServiceNow `{ value, display_value }` pairs display correctly, and the raw value is what gets sent. The full format is in `src/app-spec-types.ts`.
 
-Uploaded HTML gets `window.gw` injected before its own scripts:
+#### Uploaded HTML: the standard MCP Apps format
+
+Upload the same file you would use with any MCP Apps host: the [MCP Apps docs](https://modelcontextprotocol.io/extensions/apps/build) pattern, or an app from ServiceNow's MCP Server Console. The format is one HTML file that imports the official SDK:
+
+```html
+<script type="module">
+  import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.7.2/app-with-deps";
+  const app = new App({ name: "Incident list", version: "1.0.0" });
+  app.ontoolresult = (result) => render(result.structuredContent); // the opening tool's result
+  // app.callServerTool({ name, arguments }), app.updateModelContext({ content }) …
+  app.connect();
+</script>
+```
+
+How the gateway serves it:
+
+- **The file stays as written.** The only change at serve time is that the SDK import points at a copy bundled with the gateway, so no CDN is needed and the host's empty CSP doesn't block it. The stored file is untouched and still runs on other hosts.
+- **Other external domains** the page loads from (scripts, styles, images, `fetch`) are detected and allowed through the app's CSP. Validation lists them. ServiceNow URLs are refused, because apps reach ServiceNow only through tools.
+- **Opened by an existing tool.** An app that renders `ontoolresult` (like a list) is opened by an existing data tool, such as `list_incidents`, rather than a new `open_` tool. The builder suggests one when it sees `ontoolresult`. The preview's **Tool result** runs that tool, so you see real rows.
+- **Tool calls are checked.** Validation checks every `app.callServerTool({ name: "…" })` against the server's tools.
+
+The gateway's own helper is still available. Pages without the SDK get `window.gw` injected before their scripts:
 
 - `gw.call(tool, args)`, `gw.onInput(fn)`, `gw.onResult(fn)`
 - `gw.confirm({ title })`, `gw.setContext(text)`
-- `gw.mount(el, spec)` to embed a spec inside custom HTML
-- `gw.data` helpers
+- `gw.mount(el, spec)`
+- the shared CSS
 
-Pages also get the shared CSS (`.card`, `.field`, `button.primary`, `table.grid`…) and the host's light/dark theme.
+It's shorter to write, but it only runs on this gateway. For apps you want to share, use the standard format.
 
-All of this runs on one prebuilt script, `apps/_kit/dist/kit.js`, which `npm run build:apps` builds once. Code apps like the change form are still the way to go for heavier logic.
+All of this runs on two prebuilt scripts, which `npm run build:apps` builds once: `apps/_kit/dist/kit.js` (spec apps and `gw`) and `apps/_kit/dist/ext-apps.js` (the bundled SDK for standard apps). Code apps like the change form are still the way to go for heavier logic.
 
 ### Building code apps
 

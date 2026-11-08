@@ -5,6 +5,7 @@
 import type { AppSpec, AppSpecType, FieldSpec } from "./app-spec-types.js";
 import type { MCPServer, Tool } from "./types.js";
 import { isWriteTool, visibilityOf } from "./mcp-instance.js";
+import { htmlFormat, rewriteSdkImports, type HtmlFormat } from "./apps.js";
 
 export type { AppSpec, AppSpecType };
 
@@ -12,7 +13,11 @@ export interface ValidationReport {
   ok: boolean;
   errors: string[];
   warnings: string[];
+  notes?: string[]; // guidance that is not a problem
   tools: { name: string; write: boolean; appVisible: boolean }[]; // tools the app calls
+  format?: HtmlFormat; // HTML apps: "standard" (official SDK) or "kit" (window.gw)
+  csp?: { resourceDomains: string[]; connectDomains: string[] }; // HTML apps: external origins it uses
+  showsResult?: boolean; // HTML apps: renders the result of the tool that opens it
 }
 
 export const MAX_HTML_BYTES = 1_500_000;
@@ -194,8 +199,21 @@ export function validateSpec(spec: unknown, server: MCPServer): ValidationReport
   return r.done();
 }
 
-// Static checks on an uploaded single-file app. The host sandboxes it with an empty CSP, so
-// anything loaded from elsewhere will not work; ServiceNow is reached only via gw.call().
+// Static checks on an uploaded single-file app. Two formats are accepted:
+// - standard: the official SDK (new App(), app.connect(), app.ontoolresult, app.callServerTool),
+//   exactly as in the MCP Apps docs and ServiceNow's MCP Server Console; the file is served as is.
+// - kit: the gateway's window.gw helper.
+// External origins the page loads from are allowed through the app's CSP (and reported);
+// ServiceNow itself is only reached through tools.
+function originOf(url: string): string | undefined {
+  try {
+    const u = new URL(url.startsWith("//") ? `https:${url}` : url);
+    return u.protocol === "https:" || u.protocol === "wss:" ? u.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function validateHtml(html: unknown, server: MCPServer): ValidationReport {
   const r = new Report(server);
   if (typeof html !== "string" || !html.trim()) {
@@ -205,34 +223,74 @@ export function validateHtml(html: unknown, server: MCPServer): ValidationReport
   const bytes = Buffer.byteLength(html);
   if (bytes > MAX_HTML_BYTES) r.err(`The file is ${(bytes / 1e6).toFixed(1)} MB; the limit is ${MAX_HTML_BYTES / 1e6} MB`);
   if (!/<(html|body|div|main|form|script)\b/i.test(html)) r.err("This does not look like an HTML page");
+  const format = htmlFormat(html);
+  const notes: string[] = [];
 
-  for (const m of html.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']?([^"'\s>]+)/gi)) {
-    r.err(`<script src="${m[1]}">: apps must be one self-contained file; inline the script`);
-  }
-  for (const m of html.matchAll(/<link\b[^>]*\bhref\s*=\s*["']?(https?:[^"'\s>]+|\/\/[^"'\s>]+)/gi)) {
-    r.err(`<link href="${m[1]}">: external stylesheets are blocked; inline the CSS`);
-  }
-  for (const m of html.matchAll(/\b(?:src|href)\s*=\s*["']?(https?:\/\/[^"'\s>]+)/gi)) {
-    if (/<a\b/i.test(html.slice(Math.max(0, m.index! - 200), m.index))) continue; // links are fine
-    r.warn(`${m[1]} is loaded from outside; the host blocks external resources`);
-  }
-  if (/\bfetch\s*\(|XMLHttpRequest|new\s+WebSocket/.test(html)) {
-    r.warn("The page uses fetch/XHR/WebSocket. Network access is blocked; call tools with gw.call(name, args) instead");
-  }
-  if (/service-now\.com|\/api\/now\//i.test(html)) {
-    r.err("The page refers to ServiceNow URLs directly. Apps never hold credentials; call a tool with gw.call()");
-  }
-  if (/<script\b[^>]*type\s*=\s*["']?module/i.test(html) && /\bimport\s+[^(]/.test(html)) {
-    r.warn("ES module imports will not resolve in the sandbox; use the injected window.gw instead");
+  if (/service-now\.com|\/api\/now\/|\/api\/sn_/i.test(html)) {
+    r.err("The page refers to ServiceNow URLs directly. Apps never hold credentials; call a tool instead (app.callServerTool or gw.call)");
   }
 
-  const calls = [...html.matchAll(/\bgw\.call\(\s*["'`]([\w.-]+)["'`]/g)].map((m) => m[1]!);
-  const specs = [...html.matchAll(/\bgw\.mount\(/g)];
-  if (calls.length === 0 && specs.length === 0) {
-    r.warn("The page never calls gw.call(...), so it shows only static content");
+  // The SDK import is served from a bundled copy, so it is not an external load.
+  const body = format === "standard" ? rewriteSdkImports(html).html : html;
+  const resource = new Set<string>();
+  const connect = new Set<string>();
+  const add = (set: Set<string>, url: string) => {
+    const o = originOf(url);
+    if (o) set.add(o);
+    else if (/^http:/i.test(url)) r.err(`${url}: only https resources can be loaded`);
+  };
+  for (const m of body.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']?([^"'\s>]+)/gi)) {
+    if (/^(https?:)?\/\//i.test(m[1]!)) add(resource, m[1]!);
+    else r.err(`<script src="${m[1]}">: a relative file cannot be loaded; inline it, since the app is one file`);
   }
-  for (const name of new Set(calls)) r.tool(name, "gw.call");
-  return r.done();
+  for (const m of body.matchAll(/<link\b[^>]*\bhref\s*=\s*["']?([^"'\s>]+)/gi)) {
+    if (/^(https?:)?\/\//i.test(m[1]!)) add(resource, m[1]!);
+  }
+  for (const m of body.matchAll(/\bimport\s*(?:[\w$*{},\s]+from\s*)?["']((?:https?:)?\/\/[^"']+)["']/g)) add(resource, m[1]!);
+  for (const m of body.matchAll(/\bimport\s*\(\s*["']((?:https?:)?\/\/[^"']+)["']/g)) add(resource, m[1]!);
+  for (const m of body.matchAll(/<(?:img|source|video|audio)\b[^>]*\bsrc\s*=\s*["']?(https?:\/\/[^"'\s>]+)/gi)) add(resource, m[1]!);
+  for (const m of body.matchAll(/url\(\s*["']?(https?:\/\/[^"')\s]+)/gi)) add(resource, m[1]!);
+  for (const m of body.matchAll(/@import\s+["'](https?:\/\/[^"']+)/gi)) add(resource, m[1]!);
+  for (const m of body.matchAll(/\b(?:fetch|new\s+WebSocket|new\s+EventSource)\s*\(\s*["'`]((?:https?|wss):\/\/[^"'`]+)/g)) add(connect, m[1]!);
+  if (/\bfetch\s*\(\s*[^"'`\s]|XMLHttpRequest/.test(body)) {
+    r.warn("The page makes network calls to URLs computed at runtime. Only domains listed in the app's CSP are reachable; prefer calling tools");
+  }
+  for (const o of resource) r.warn(`Loads from ${o}: allowed for this app through its CSP. Users' machines must be able to reach it`);
+  for (const o of connect) r.warn(`Connects to ${o}: allowed for this app through its CSP. Prefer a tool, so the gateway holds any credentials`);
+
+  let calls: string[] = [];
+  let showsResult = false;
+  // Scan code, not comments (HTML comments and whole-line // comments).
+  const code = html.replace(/<!--[\s\S]*?-->/g, "").replace(/^\s*\/\/.*$/gm, "");
+  if (format === "standard") {
+    const unsupported = [...html.matchAll(/["']([^"']*@modelcontextprotocol\/ext-apps[^"']*)["']/g)]
+      .map((m) => m[1]!)
+      .filter((spec) => /\/(react|app-bridge|server)/.test(spec));
+    for (const spec of unsupported) r.err(`"${spec}" is not supported in uploaded apps; use the main @modelcontextprotocol/ext-apps entry`);
+    if (!/\.connect\s*\(/.test(html)) r.warn("The page never calls app.connect(), so it cannot talk to the host");
+    calls = [...code.matchAll(/\bcallServerTool\s*\(\s*\{[^}]*?\bname\s*:\s*["'`]([\w.-]+)["'`]/g)].map((m) => m[1]!);
+    showsResult = /\.ontoolresult\s*=|addEventListener\(\s*["']toolresult/.test(code);
+    notes.push("Standard MCP Apps format (official SDK): the file is served as written, so it also works on other MCP Apps hosts and platforms such as ServiceNow's MCP Server Console.");
+    if (/callServerTool\s*\(\s*[^{\s]/.test(code)) r.warn("Some app.callServerTool(...) calls use a computed tool name, so they cannot be checked");
+  } else {
+    calls = [...code.matchAll(/\bgw\.call\(\s*["'`]([\w.-]+)["'`]/g)].map((m) => m[1]!);
+    showsResult = /\bgw\.onResult\s*\(/.test(code);
+    notes.push("Gateway format (window.gw). It only runs on this gateway; for portability, use the official SDK (import { App } from \"@modelcontextprotocol/ext-apps\").");
+  }
+  for (const name of new Set(calls)) r.tool(name, format === "standard" ? "app.callServerTool" : "gw.call");
+  if (showsResult) {
+    notes.push("The page renders the result of the tool that opens it. Open it with a data tool (e.g. a list tool) rather than a new open_ tool.");
+  } else if (calls.length === 0 && !/\bgw\.mount\(/.test(html)) {
+    r.warn("The page never calls a tool or reads a tool result, so it shows only static content");
+  }
+
+  return {
+    ...r.done(),
+    notes,
+    format,
+    csp: { resourceDomains: [...resource], connectDomains: [...connect] },
+    showsResult,
+  };
 }
 
 // ── Starter templates ─────────────────────────────────────────────────────────
@@ -271,18 +329,49 @@ export function templates(): Record<AppSpecType | "html", unknown> {
       ],
     },
     html: `<!doctype html>
-<html>
+<!-- Standard MCP App (official SDK). The same file works on this gateway, in the MCP Apps docs
+     examples and on ServiceNow's MCP Server Console. Open it with a data tool such as
+     list_incidents: the host passes that tool's result to app.ontoolresult. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Incident list</title>
+  <style>
+    body { font: 13px system-ui, sans-serif; margin: 12px; background: var(--color-background-primary, #fff); color: var(--color-text-primary, #111); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #8884; }
+  </style>
+</head>
 <body>
-  <h1>My app</h1>
-  <button id="go" class="primary">Load</button>
-  <pre id="out" class="card mono"></pre>
-  <script>
-    // window.gw is injected by the gateway: gw.call(tool, args), gw.onInput(fn),
-    // gw.onResult(fn), gw.confirm({title}), gw.setContext(text), gw.mount(el, spec).
-    document.getElementById("go").onclick = async () => {
-      const res = await gw.call("list_incidents", { sysparm_limit: 5 });
-      document.getElementById("out").textContent = JSON.stringify(res, null, 2);
+  <div id="app">Loading…</div>
+  <script type="module">
+    import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.7.2/app-with-deps";
+
+    const app = new App({ name: "Incident list", version: "1.0.0" });
+
+    // Table API results arrive as { result: [...] }; other platforms may use { records: [...] }.
+    function rows(data) {
+      if (Array.isArray(data)) return data;
+      for (const v of Object.values(data || {})) {
+        if (Array.isArray(v)) return v;
+        if (v && typeof v === "object") for (const w of Object.values(v)) if (Array.isArray(w)) return w;
+      }
+      return [];
+    }
+    const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+    app.ontoolresult = (result) => {
+      let data = result.structuredContent;
+      if (!data) { try { data = JSON.parse(result.content?.find((c) => c.type === "text")?.text ?? ""); } catch {} }
+      const list = rows(data);
+      document.getElementById("app").innerHTML = list.length
+        ? "<table><tr><th>Number</th><th>Priority</th><th>Short description</th></tr>" +
+          list.map((r) => \`<tr><td>\${esc(r.number)}</td><td>\${esc(r.priority)}</td><td>\${esc(r.short_description)}</td></tr>\`).join("") +
+          "</table>"
+        : "No incidents.";
     };
+
+    app.connect();
   </script>
 </body>
 </html>
@@ -306,14 +395,21 @@ const SPEC_DOC = `Spec formats (JSON):
 - approval: { "type":"approval", "title", "description"?, "source"?: { "tool", "args"?, "path"? }, "titleField", "subtitleField"?, "fields"?: [ { "field", "label"? } ], "actions": [ { "label", "tool", "args": { ... }, "style"?: primary|danger, "comment"?: none|optional|required, "confirm"?: true } ], "empty"? }
 Templates: strings in args may use {{field}} (current row or form value), {{input.x}} (argument passed to the tool that opened the app), {{comment}} (approval comment) and {{text}} (what the user typed in a lookup; without it the text is sent as the "textArg" argument). "path" is a dot path to the rows array in the tool's result; when omitted the first array is used (Table API results are { "result": [...] }). ServiceNow values may be strings or { value, display_value } objects; both display correctly.`;
 
-const HTML_DOC = `HTML format: one self-contained HTML file (inline <style> and <script>, no external URLs, no fetch). The gateway injects window.gw before your scripts:
-- await gw.call(toolName, args) → the tool's structuredContent (throws an Error with .message on failure)
-- gw.onInput(fn(args)) / gw.onResult(fn(structured, isError)): what the model passed to / got back from the tool that opened the app
-- await gw.confirm({ title, details?: [[label, value]], confirmLabel?, danger? }) → boolean; always confirm before a write
-- gw.setContext(text): tell the model what the user did
-- gw.mount(element, spec): render a form/view/approval spec inside your page
-- gw.data.rowsOf(result, path?), gw.data.textOf(value): helpers for Table API results
-Built-in CSS classes: .card .muted .row .field .banner(.error|.ok|.warn) .actions button.primary button.danger table.grid .pill. The page follows the host's light/dark theme automatically.`;
+const HTML_DOC = `HTML format: one self-contained HTML file (inline <style> and <script>) using the official MCP Apps SDK, so it runs on any MCP Apps host (this gateway, Claude, ServiceNow's MCP Server Console):
+  <script type="module">
+    import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.7.2/app-with-deps";
+    const app = new App({ name: "My app", version: "1.0.0" });
+    app.ontoolinput = (params) => { /* params.arguments: what the model passed to the tool that opened the app */ };
+    app.ontoolresult = (result) => { /* result.structuredContent (or JSON in result.content[0].text): that tool's result */ };
+    const res = await app.callServerTool({ name: "tool_name", arguments: { ... } }); // res.structuredContent, res.isError
+    await app.updateModelContext({ content: [{ type: "text", text: "what the user did" }] });
+    app.connect();
+  </script>
+- Call only the tools listed below; never call ServiceNow URLs directly (the app holds no credentials).
+- Ask the user to confirm (your own dialog) before calling a write tool, and show errors (res.isError).
+- Table API results arrive as { result: [...] } (a record: { result: {...} }); read rows tolerantly.
+- No other external URLs unless necessary; any you use are allowed through the app's CSP.
+- Style with the host's CSS variables where possible: var(--color-background-primary), var(--color-text-primary), var(--color-text-secondary), var(--font-sans).`;
 
 export function buildPrompt(server: MCPServer, format: AppSpecType | "html", goal: string): string {
   const tools = server.tools.map(describeTool).join("\n");

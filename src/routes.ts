@@ -208,15 +208,23 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     if (!name) { res.status(400).json({ error: "name is required" }); return; }
     const report = validateDraft(server, draft);
     if (!report.ok) { res.status(400).json({ error: "The app has errors", report }); return; }
+    const opener = draft.openWith ? server.tools.find((t) => t.name === draft.openWith) : undefined;
+    if (draft.openWith && !opener) { res.status(400).json({ error: `Unknown tool ${draft.openWith}` }); return; }
 
     const slug = uniqueSlug(server, slugify(draft.slug || name));
     const app: UIApp = { uri: `ui://${slugify(server.name)}/${slug}`, name, description: String(draft.description ?? ""), source: draft.source };
     if (draft.source === "spec") app.spec = draft.spec;
-    else app.file = await saveHtml(server, slug, String(draft.html));
+    else {
+      app.file = await saveHtml(server, slug, String(draft.html));
+      setCsp(app, report);
+    }
 
     storage.updateServer(server.id, { apps: [...(server.apps ?? []), app], appsEnabled: true });
     let launcher: Tool | undefined;
-    if (draft.launcher !== false) {
+    if (opener) {
+      // An existing tool opens the app; the app renders that tool's result (standard pattern).
+      launcher = storage.updateTool(server.id, opener.id, { ui: { ...opener.ui, resourceUri: app.uri } });
+    } else if (draft.launcher !== false) {
       launcher = storage.addTool(server.id, launcherTool(server, app, draft));
     }
     res.status(201).json({ app: { ...app, slug }, launcher, report });
@@ -232,7 +240,7 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     if (!report.ok) { res.status(400).json({ error: "The app has errors", report }); return; }
     const next: UIApp = { ...app, name: String(draft.name ?? app.name), description: String(draft.description ?? app.description ?? "") };
     if (draft.source === "spec") { next.spec = draft.spec; next.source = "spec"; delete next.file; }
-    else { next.file = await saveHtml(server, slugOf(app), String(draft.html)); next.source = "html"; delete next.spec; }
+    else { next.file = await saveHtml(server, slugOf(app), String(draft.html)); next.source = "html"; delete next.spec; setCsp(next, report); }
     storage.updateServer(server.id, { apps: (server.apps ?? []).map((a) => (a.uri === app.uri ? next : a)) });
     res.json({ app: { ...next, slug: slugOf(next) }, report });
   });
@@ -409,7 +417,15 @@ interface Draft {
   source?: "spec" | "html";
   spec?: AppSpec;
   html?: string;
-  launcher?: boolean;
+  launcher?: boolean; // add an open_<slug> tool (default true)
+  openWith?: string; // instead: link this existing tool to the app
+}
+
+// External origins an uploaded page uses become its CSP, so the host allows exactly those.
+function setCsp(app: UIApp, report: ValidationReport): void {
+  const csp = report.csp;
+  if (csp && (csp.resourceDomains.length || csp.connectDomains.length)) app.csp = { ...csp };
+  else delete app.csp;
 }
 
 function validateDraft(server: MCPServer, draft: Draft): ValidationReport {
