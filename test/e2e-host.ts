@@ -34,6 +34,8 @@ const kitServer = {
       ],
       submit: { tool: "create_incident", label: "Create incident" },
       result: { title: "Created {{result.number}}", fields: [{ field: "result.urgency", label: "Urgency" }] } } },
+    // A standard MCP App (official SDK, CDN import), opened by list_incidents.
+    { uri: "ui://incident-kit/std-list", name: "Incident list", source: "html", file: "kit/std-list.html" },
     { uri: "ui://incident-kit/board", name: "Board", source: "spec", spec: {
       type: "view", title: "Open incidents by priority", display: "bar", groupBy: "priority",
       source: { tool: "list_incidents", args: { sysparm_query: "active=true", sysparm_display_value: "true" } } } },
@@ -46,7 +48,7 @@ const kitServer = {
       ] } },
   ],
   tools: [
-    { id: "k1", name: "list_incidents", description: "", method: "GET", endpoint: "/api/now/table/incident", apiType: "table", parameters: [Q("sysparm_query"), Q("sysparm_display_value")] },
+    { id: "k1", name: "list_incidents", ui: { resourceUri: "ui://incident-kit/std-list" }, description: "", method: "GET", endpoint: "/api/now/table/incident", apiType: "table", parameters: [Q("sysparm_query"), Q("sysparm_display_value")] },
     { id: "k2", name: "list_cis", description: "", method: "GET", endpoint: "/api/now/table/cmdb_ci", apiType: "table", parameters: [Q("sysparm_query")] },
     { id: "k3", name: "create_incident", description: "", method: "POST", endpoint: "/api/now/table/incident", apiType: "table", parameters: [Q("short_description", true, "body"), Q("urgency", false, "body"), Q("cmdb_ci", false, "body")] },
     { id: "k4", name: "update_incident", description: "", method: "PATCH", endpoint: "/api/now/table/incident/{sys_id}", apiType: "table", parameters: [Q("sys_id", true, "path"), Q("state", false, "body"), Q("work_notes", false, "body")] },
@@ -66,6 +68,27 @@ writeFileSync(
     ],
   })
 );
+
+// Uploaded HTML lives next to the store.
+const { mkdirSync } = await import("fs");
+mkdirSync(join(dir, "apps", "kit"), { recursive: true });
+writeFileSync(join(dir, "apps", "kit", "std-list.html"), `<!doctype html><html><head><meta charset="utf-8"><title>Incident list</title></head><body>
+<div id="app">Loading…</div><button id="refresh">Refresh</button>
+<script type="module">
+  import { App } from 'https://esm.sh/@modelcontextprotocol/ext-apps@1.7.2/app-with-deps';
+  const app = new App({ name: 'Incident list', version: '1.0.0' });
+  const show = (data) => {
+    const rows = Array.isArray(data?.result) ? data.result : [];
+    document.getElementById('app').innerHTML = rows.map((r) => '<div class="row">' + r.number + '</div>').join('');
+  };
+  app.ontoolresult = (result) => show(result.structuredContent);
+  document.getElementById('refresh').onclick = async () => {
+    const res = await app.callServerTool({ name: 'list_incidents', arguments: { sysparm_query: 'priority=1' } });
+    show(res.structuredContent);
+    await app.updateModelContext({ content: [{ type: 'text', text: 'refreshed P1s' }] });
+  };
+  app.connect();
+</script></body></html>`);
 
 const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
 const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
@@ -136,6 +159,8 @@ async function openApp(client: any, uri: string, tool: string, args: Record<stri
   page.on("console", (m: any) => console.log("console:", m.text()));
   page.setDefaultTimeout(8000);
   await page.exposeFunction("mcpCall", async (p: string) => JSON.stringify(await client.callTool(JSON.parse(p))));
+  // Apps must not need a CDN: block esm.sh so a standard app only works if the gateway bundles the SDK.
+  await page.route(/esm\.sh/, (route: any) => route.abort());
   await page.setContent(HOST);
   await page.evaluate((t: string) => ((window as any).__theme = t), theme);
   const res = await client.readResource({ uri });
@@ -236,6 +261,17 @@ try {
   check((await f.frame.locator(".card h1").textContent())!.includes(inc?.["number"] ?? "??"), "kit form shows the result title");
   if (shots) await f.page.screenshot({ path: join(shots, "kit-form-done.png") });
   await f.page.close();
+
+  // Standard SDK app: the gateway serves the SDK itself; the page never reaches esm.sh.
+  const std = await openApp(kit, "ui://incident-kit/std-list", "list_incidents", { sysparm_query: "active=true" });
+  await std.frame.locator(".row").first().waitFor();
+  check((await std.frame.locator(".row").count()) === 5, "standard SDK app renders its opener's result");
+  await std.frame.locator("#refresh").click();
+  await std.page.waitForFunction(() => (window as any).modelContext.length > 0);
+  check((await std.frame.locator(".row").count()) === 1, "standard SDK app calls tools with app.callServerTool");
+  const lt = (await kit.listTools()).tools.find((t: any) => t.name === "list_incidents") as any;
+  check(lt?._meta?.ui?.resourceUri === "ui://incident-kit/std-list", "existing data tool links to the standard app");
+  await std.page.close();
 
   const v = await openApp(kit, "ui://incident-kit/board", "open_board", {});
   await v.frame.locator(".bar-row").first().waitFor();

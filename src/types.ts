@@ -49,6 +49,18 @@ export interface UIAppCsp {
   resourceDomains?: string[];
 }
 
+// Declared external references, as in ServiceNow's MCP Server Console:
+// "resource" = libraries, fonts, styles, images loaded at render time (CSP resourceDomains);
+// "connection" = domains the page sends requests to at runtime (CSP connectDomains).
+export interface UIAppReference {
+  type: "resource" | "connection";
+  url: string; // an https origin, e.g. https://esm.sh (wildcard subdomains allowed: https://*.example.com)
+  name?: string; // e.g. "MCP Apps SDK"
+}
+
+// Browser features the page needs (MCP Apps _meta.ui.permissions).
+export type UIAppPermission = "camera" | "microphone" | "geolocation" | "clipboardWrite";
+
 // Where an app's HTML comes from:
 // - "bundle": a Vite-built app under apps/ (code apps such as change-create)
 // - "spec":   a JSON spec (form / view / approval) rendered by the App Kit; no build step
@@ -63,7 +75,9 @@ export interface UIApp {
   bundle?: string; // source "bundle": apps/change-create/dist/index.html (relative to the project root)
   spec?: AppSpec; // source "spec"
   file?: string; // source "html": <serverId>/<slug>.html under the apps data dir
-  csp?: UIAppCsp;
+  csp?: UIAppCsp; // derived from references
+  references?: UIAppReference[];
+  permissions?: UIAppPermission[];
 }
 
 // How callers are identified to ServiceNow.

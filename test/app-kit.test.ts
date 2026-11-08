@@ -26,7 +26,7 @@ const server = {
 writeFileSync(process.env["STORE_FILE"], JSON.stringify({ instance: null, servers: [server] }));
 
 const { validateSpec, validateHtml, buildPrompt, templates } = await import("../src/app-spec.js");
-const { injectKit, renderSpecPage } = await import("../src/apps.js");
+const { injectKit, renderSpecPage, htmlFormat, rewriteSdkImports, prepareStandard } = await import("../src/apps.js");
 const { fill, rowsOf, textOf, countBy } = await import("../apps/_kit/data.js");
 
 const form = {
@@ -112,16 +112,59 @@ describe("validateHtml", () => {
     expect(r2.errors.join("\n")).toMatch(/"missing_tool" does not exist/);
   });
 
-  it("rejects external scripts, styles and direct ServiceNow calls", () => {
+  it("allows external scripts and styles through the app's CSP, but never ServiceNow URLs", () => {
     const r = validateHtml(
       `<html><head><script src="https://cdn.example.com/x.js"></script><link rel="stylesheet" href="https://fonts.example.com/a.css"></head>
-       <body><script>fetch("https://dev1.service-now.com/api/now/table/incident")</script></body></html>`,
+       <body><script>fetch("https://dev1.service-now.com/api/now/table/incident"); gw.call("list_incidents")</script></body></html>`,
       server as any
     );
-    expect(r.errors.join("\n")).toMatch(/inline the script/);
-    expect(r.errors.join("\n")).toMatch(/external stylesheets/);
     expect(r.errors.join("\n")).toMatch(/ServiceNow URLs directly/);
-    expect(r.warnings.join("\n")).toMatch(/fetch/);
+    expect(r.csp!.resourceDomains.sort()).toEqual(["https://cdn.example.com", "https://fonts.example.com"]);
+    expect(r.csp!.connectDomains).toEqual(["https://dev1.service-now.com"]);
+    const rel = validateHtml(`<body><script src="./app.js"></script><script>gw.call("list_incidents")</script></body>`, server as any);
+    expect(rel.errors.join("\n")).toMatch(/relative file/);
+  });
+});
+
+describe("standard (official SDK) HTML apps", () => {
+  const STD = `<!doctype html><html><head><title>x</title></head><body><div id="app"></div>
+<script type="module">
+  import { App, applyDocumentTheme as theme } from 'https://esm.sh/@modelcontextprotocol/ext-apps@1.7.2/app-with-deps';
+  const app = new App({ name: 'x', version: '1' });
+  app.ontoolresult = (r) => { document.getElementById('app').textContent = JSON.stringify(r.structuredContent) };
+  document.body.onclick = () => app.callServerTool({ name: 'create_incident', arguments: {} });
+  app.connect();
+</script></body></html>`;
+
+  it("detects the format and checks callServerTool names", () => {
+    expect(htmlFormat(STD)).toBe("standard");
+    expect(htmlFormat(`<script>gw.call("x")</script>`)).toBe("kit");
+    const r = validateHtml(STD, server as any);
+    expect(r).toMatchObject({ ok: true, format: "standard", showsResult: true, csp: { resourceDomains: [], connectDomains: [] } });
+    expect(r.tools.map((t) => t.name)).toEqual(["create_incident"]);
+    const bad = validateHtml(STD.replace("create_incident", "nope"), server as any);
+    expect(bad.errors.join("\n")).toMatch(/"nope" does not exist/);
+    const react = validateHtml(STD.replace("/app-with-deps", "/react"), server as any);
+    expect(react.errors.join("\n")).toMatch(/not supported/);
+  });
+
+  it("serves the file as written, with only the SDK import pointed at the bundled copy", () => {
+    const { html, rewritten } = rewriteSdkImports(STD);
+    expect(rewritten).toBe(1);
+    expect(html).toContain("const { App, applyDocumentTheme: theme } = window.McpExtApps;");
+    expect(html.replace("const { App, applyDocumentTheme: theme } = window.McpExtApps;", "")).toBe(
+      STD.replace("import { App, applyDocumentTheme as theme } from 'https://esm.sh/@modelcontextprotocol/ext-apps@1.7.2/app-with-deps';", "")
+    );
+    const page = prepareStandard(STD, "window.McpExtApps={App:function(){}}");
+    expect(page.indexOf("window.McpExtApps={")).toBeLessThan(page.indexOf("new App("));
+    expect(page).not.toContain("esm.sh");
+    expect(page).not.toContain("window.gw");
+    expect(rewriteSdkImports(`import * as M from "@modelcontextprotocol/ext-apps"\nimport x from "./y";`).html).toBe(`const M = window.McpExtApps;\nimport x from "./y";`);
+  });
+
+  it("starter HTML is the standard format and validates", () => {
+    const r = validateHtml(templates().html, server as any);
+    expect(r.ok && r.format).toBe("standard");
   });
 });
 
@@ -218,7 +261,7 @@ describe("app routes", () => {
     const file = join(APPS_DATA_DIR, r.body.app.file);
     expect(existsSync(file)).toBe(true);
     const src = await call("GET", "/servers/s1/apps/board/source");
-    expect(src.body).toEqual({ source: "html", html });
+    expect(src.body).toEqual({ source: "html", html, references: [], permissions: [] });
     const upd = await call("PUT", "/servers/s1/apps/board", { html: html.replace("Board", "Board v2") });
     expect(upd.status).toBe(200);
     expect((await call("GET", "/servers/s1/apps/board/source")).body.html).toContain("Board v2");
@@ -227,6 +270,49 @@ describe("app routes", () => {
     expect(existsSync(file)).toBe(false);
     const tools = (await call("GET", "/servers/s1/tools")).body.map((t: any) => t.name);
     expect(tools).not.toContain("open_board");
+  });
+
+  it("links an existing tool as the opener and stores the page's CSP", async () => {
+    const html = `<html><body><img src="https://img.example.com/logo.png"><script type="module">
+      import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.7.2/app-with-deps";
+      const app = new App({ name: "l", version: "1" }); app.ontoolresult = () => {}; app.connect();</script></body></html>`;
+    const r = await call("POST", "/servers/s1/apps", { name: "Incident list", source: "html", html, openWith: "list_incidents" });
+    expect(r.status).toBe(201);
+    expect(r.body.launcher).toMatchObject({ name: "list_incidents", ui: { resourceUri: "ui://incident-ops/incident-list" } });
+    expect(r.body.app.csp).toEqual({ resourceDomains: ["https://img.example.com"], connectDomains: [] });
+    expect(r.body.app.references).toEqual([{ type: "resource", url: "https://img.example.com", name: "detected" }]);
+    const tools = (await call("GET", "/servers/s1/tools")).body.map((t: any) => t.name);
+    expect(tools).not.toContain("open_incident_list");
+    await call("DELETE", "/servers/s1/apps/incident-list");
+    const after = (await call("GET", "/servers/s1/tools")).body.find((t: any) => t.name === "list_incidents");
+    expect(after.ui?.resourceUri).toBeUndefined();
+  });
+
+  it("stores declared references and permissions like ServiceNow's console, and serves them as _meta.ui", async () => {
+    const html = `<html><body><script type="module">
+      import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.7.2/app-with-deps";
+      const app = new App({ name: "t", version: "1" }); app.ontoolresult = () => {}; app.connect();</script></body></html>`;
+    const bad = await call("POST", "/servers/s1/apps", { name: "T", source: "html", html, references: [{ type: "resource", url: "esm.sh" }] });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toMatch(/https origin/);
+    const r = await call("POST", "/servers/s1/apps", {
+      name: "Incident table", source: "html", html, openWith: "list_incidents",
+      references: [{ type: "resource", url: "https://esm.sh/", name: "MCP Apps SDK" }, { type: "connection", url: "https://api.example.com" }],
+      permissions: ["clipboardWrite"],
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.app.references).toEqual([{ type: "resource", url: "https://esm.sh", name: "MCP Apps SDK" }, { type: "connection", url: "https://api.example.com" }]);
+    expect(r.body.app.csp).toEqual({ resourceDomains: ["https://esm.sh"], connectDomains: ["https://api.example.com"] });
+    const { appMeta } = await import("../src/apps.js");
+    expect(appMeta(r.body.app)).toEqual({
+      ui: { csp: { connectDomains: ["https://api.example.com"], resourceDomains: ["https://esm.sh"] }, prefersBorder: true, permissions: { clipboardWrite: {} } },
+    });
+    const src = await call("GET", "/servers/s1/apps/incident-table/source");
+    expect(src.body.permissions).toEqual(["clipboardWrite"]);
+    // Editing the HTML keeps the declarations.
+    await call("PUT", "/servers/s1/apps/incident-table", { html: html.replace('"t"', '"t2"') });
+    expect((await call("GET", "/servers/s1/apps")).body.apps.find((a: any) => a.slug === "incident-table").permissions).toEqual(["clipboardWrite"]);
+    await call("DELETE", "/servers/s1/apps/incident-table");
   });
 
   it("preview calls dry-run writes", async () => {

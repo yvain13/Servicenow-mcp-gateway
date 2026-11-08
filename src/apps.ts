@@ -8,6 +8,7 @@ import type { UIApp } from "./types.js";
 export { RESOURCE_MIME_TYPE };
 
 export const KIT_PATH = "apps/_kit/dist/kit.js";
+export const EXT_APPS_PATH = "apps/_kit/dist/ext-apps.js";
 
 function inside(base: string, rel: string, what: string): string {
   const p = normalize(rel);
@@ -37,19 +38,82 @@ export async function bundleStatus(app: UIApp): Promise<{ built: boolean; bytes?
   }
 }
 
-let kitCache: { mtime: number; js: string } | undefined;
+const cache = new Map<string, { mtime: number; js: string }>();
 
-async function kitScript(): Promise<string | undefined> {
-  const p = join(ROOT, KIT_PATH);
+async function builtScript(rel: string): Promise<string | undefined> {
+  const p = join(ROOT, rel);
   try {
     const s = await stat(p);
-    if (!kitCache || kitCache.mtime !== s.mtimeMs) {
-      kitCache = { mtime: s.mtimeMs, js: await readFile(p, "utf8") };
-    }
-    return kitCache.js;
+    const hit = cache.get(rel);
+    if (hit && hit.mtime === s.mtimeMs) return hit.js;
+    const js = await readFile(p, "utf8");
+    cache.set(rel, { mtime: s.mtimeMs, js });
+    return js;
   } catch {
     return undefined;
   }
+}
+
+const kitScript = () => builtScript(KIT_PATH);
+
+// ── Uploaded HTML: two formats ───────────────────────────────────────────────
+// "standard": written against the official SDK (import { App } from "@modelcontextprotocol/ext-apps"),
+//   as in the MCP Apps docs and ServiceNow's MCP Server Console. Served as written; only the
+//   SDK import is pointed at a bundled copy, so no CDN is needed and the same file works on
+//   either platform.
+// "kit": uses the gateway's window.gw helper, which is injected before the page's scripts.
+export type HtmlFormat = "standard" | "kit";
+
+const EXT_SPEC = String.raw`[^'"]*@modelcontextprotocol\/ext-apps(?:@[\w.^~-]+)?(?:\/app-with-deps|\/app|\/\+esm|\/dist\/src\/app(?:-with-deps)?\.js)?(?:\?[^'"]*)?`;
+const EXT_IMPORT = new RegExp(String.raw`import\s*(\{[^}]*\}|\*\s*as\s+[\w$]+|[\w$]+)\s*from\s*(['"])(${EXT_SPEC})\2[ \t]*;?`, "g");
+const EXT_DYNAMIC = new RegExp(String.raw`import\(\s*(['"])${EXT_SPEC}\1\s*\)`, "g");
+
+export function htmlFormat(html: string): HtmlFormat {
+  return /@modelcontextprotocol\/ext-apps|\bnew\s+App\s*\(/.test(html) && !/\bgw\.(call|onInput|onResult|mount)\b/.test(html)
+    ? "standard"
+    : "kit";
+}
+
+function bindingsFor(clause: string): string {
+  const c = clause.trim();
+  if (c.startsWith("{")) return c.replace(/\b([\w$]+)\s+as\s+([\w$]+)/g, "$1: $2");
+  if (c.startsWith("*")) return c.replace(/^\*\s*as\s+/, "");
+  return c; // default import: the namespace
+}
+
+// Rewrites SDK imports to read window.McpExtApps. Returns the html unchanged if there are none.
+export function rewriteSdkImports(html: string): { html: string; rewritten: number } {
+  let rewritten = 0;
+  const out = html
+    .replace(EXT_IMPORT, (_m, clause: string) => {
+      rewritten++;
+      return `const ${bindingsFor(clause)} = window.McpExtApps;`;
+    })
+    .replace(EXT_DYNAMIC, () => {
+      rewritten++;
+      return "Promise.resolve(window.McpExtApps)";
+    });
+  return { html: out, rewritten };
+}
+
+function injectHead(html: string, tag: string): string {
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => `${m}${tag}`);
+  if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => `${m}<head><meta charset="utf-8">${tag}</head>`);
+  return `<!doctype html><html><head><meta charset="utf-8">${tag}</head><body>${html}</body></html>`;
+}
+
+export function prepareStandard(html: string, sdk: string): string {
+  const { html: out, rewritten } = rewriteSdkImports(html);
+  return rewritten ? injectHead(out, `<script>${scriptSafe(sdk)}</script>`) : html;
+}
+
+async function renderHtml(html: string): Promise<string> {
+  if (htmlFormat(html) === "standard") {
+    const sdk = await builtScript(EXT_APPS_PATH);
+    return sdk ? prepareStandard(html, sdk) : notBuilt({ uri: "", name: "This app" }, "the bundled MCP Apps SDK is not built");
+  }
+  const kit = await kitScript();
+  return kit ? injectKit(html, kit) : notBuilt({ uri: "", name: "This app" }, "the App Kit is not built");
 }
 
 // Inline <script> content must not close the tag early.
@@ -76,10 +140,7 @@ export function renderSpecPage(app: UIApp, kit: string): string {
 
 // Puts the kit first in <head>, so window.gw exists before the page's own scripts run.
 export function injectKit(html: string, kit: string): string {
-  const tag = `<script>${scriptSafe(kit)}</script>`;
-  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => `${m}${tag}`);
-  if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => `${m}<head><meta charset="utf-8">${tag}</head>`);
-  return `<!doctype html><html><head><meta charset="utf-8">${tag}</head><body>${html}</body></html>`;
+  return injectHead(html, `<script>${scriptSafe(kit)}</script>`);
 }
 
 export async function readBundle(app: UIApp): Promise<string> {
@@ -92,32 +153,34 @@ export async function readBundle(app: UIApp): Promise<string> {
       return notBuilt(app, "its bundle is not built");
     }
   }
-  const kit = await kitScript();
-  if (!kit) return notBuilt(app, "the App Kit is not built");
-  if (src === "spec") return renderSpecPage(app, kit);
+  if (src === "spec") {
+    const kit = await kitScript();
+    return kit ? renderSpecPage(app, kit) : notBuilt(app, "the App Kit is not built");
+  }
+  let html: string;
   try {
-    return injectKit(await readFile(inside(APPS_DATA_DIR, app.file ?? "", "App file"), "utf8"), kit);
+    html = await readFile(inside(APPS_DATA_DIR, app.file ?? "", "App file"), "utf8");
   } catch {
     return notBuilt(app, "its HTML file is missing");
   }
+  return renderHtml(html);
 }
 
 // Preview of an HTML app that is not saved yet.
 export async function renderDraftHtml(html: string): Promise<string> {
-  const kit = await kitScript();
-  return kit ? injectKit(html, kit) : notBuilt({ uri: "", name: "Preview" }, "the App Kit is not built");
+  return renderHtml(html);
 }
 
 export function appMeta(app: UIApp): Record<string, unknown> {
-  return {
-    ui: {
-      csp: {
-        connectDomains: app.csp?.connectDomains ?? [],
-        resourceDomains: app.csp?.resourceDomains ?? [],
-      },
-      prefersBorder: true,
+  const ui: Record<string, unknown> = {
+    csp: {
+      connectDomains: app.csp?.connectDomains ?? [],
+      resourceDomains: app.csp?.resourceDomains ?? [],
     },
+    prefersBorder: true,
   };
+  if (app.permissions?.length) ui["permissions"] = Object.fromEntries(app.permissions.map((p) => [p, {}]));
+  return { ui };
 }
 
 function escapeHtml(s: string): string {

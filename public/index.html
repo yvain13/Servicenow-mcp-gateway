@@ -188,6 +188,14 @@
   .vreport .w{color:var(--warn)}
   .row-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .app-card .acts{display:flex;gap:6px;margin-top:10px}
+  .refs{border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .refs .rrow{display:grid;grid-template-columns:150px 1fr 1fr 24px;gap:8px;padding:7px 9px;border-bottom:1px solid var(--line);align-items:center}
+  .refs .rrow:last-child{border-bottom:none}
+  .refs .rhead{background:var(--oat);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);font-weight:600}
+  .refs input,.refs select{font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:#fff;width:100%;font-family:var(--mono)}
+  .refs .rm{border:none;background:none;color:var(--ink-faint);cursor:pointer;font-size:15px}
+  .perms{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-soft)}
+  .perms label{display:flex;gap:6px;align-items:center;font-weight:400;margin:0}
 </style>
 </head>
 <body>
@@ -373,13 +381,30 @@
           <div class="field">
             <label><span id="ap_editorLabel">Spec (JSON)</span>
               <span class="hint"><a href="#" onclick="loadStarter();return false">load starter</a></span>
-              <span class="hint" id="ap_fileWrap" style="display:none"> · <label style="display:inline;font-weight:400;cursor:pointer;text-decoration:underline">attach .html<input type="file" accept=".html,.htm,text/html" id="ap_file" style="display:none" onchange="attachHtml(this)"></label></span>
+              <span class="hint" id="ap_fileWrap" style="display:none"> · <label style="display:inline;font-weight:400;cursor:pointer;text-decoration:underline">attach .html (standard MCP Apps SDK or gw)<input type="file" accept=".html,.htm,text/html" id="ap_file" style="display:none" onchange="attachHtml(this)"></label></span>
             </label>
             <textarea id="ap_code" class="code" spellcheck="false" oninput="appDirty()"></textarea>
           </div>
-          <label style="font-size:12.5px;color:var(--ink-soft);display:flex;gap:8px;align-items:center" id="ap_launcherRow">
-            <input type="checkbox" id="ap_launcher" checked> Add a tool <code id="ap_launcherName">open_…</code> the model calls to open this app
-          </label>
+          <div id="ap_htmlDecl" style="display:none">
+            <div class="field">
+              <label>External references <span class="hint">domains the HTML loads from (resources) or sends requests to (connections); validation adds any it finds</span></label>
+              <div class="refs" id="ap_refs"></div>
+              <button class="add-param" onclick="addRefRow()">+ Add reference</button>
+            </div>
+            <div class="field">
+              <label>Permissions <span class="hint">browser features the HTML needs; leave empty if none</span></label>
+              <div class="perms">
+                <label><input type="checkbox" value="microphone" class="ap_perm"> Microphone</label>
+                <label><input type="checkbox" value="camera" class="ap_perm"> Camera</label>
+                <label><input type="checkbox" value="geolocation" class="ap_perm"> Geolocation</label>
+                <label><input type="checkbox" value="clipboardWrite" class="ap_perm"> Clipboard write</label>
+              </div>
+            </div>
+          </div>
+          <div class="field" id="ap_launcherRow">
+            <label>Opened by <span class="hint">the tool Claude calls to show this app</span></label>
+            <select id="ap_openWith" onchange="syncResultTool()"></select>
+          </div>
           <div id="ap_report"></div>
         </div>
         <div>
@@ -591,6 +616,10 @@ async function openAppBuilder(serverId, slug) {
   appB = { serverId, slug: slug || null, type: null, drafts: {}, templates: appB.templates };
   if (!appB.templates) appB.templates = await api('GET', '/app-kit/templates');
   const srv = servers.find(x => x.id === serverId);
+  const ow = document.getElementById('ap_openWith');
+  ow.innerHTML = `<option value="">A new tool open_…</option>` +
+    (srv ? srv.tools : []).filter(t => t.handler !== 'app.open').map(t => `<option value="${esc(t.name)}">Existing tool: ${esc(t.name)}${t.ui && t.ui.resourceUri ? ' (re-link)' : ''}</option>`).join('') +
+    `<option value="-">No tool (link one later)</option>`;
   const sel = document.getElementById('ap_resultTool');
   sel.innerHTML = '<option value="">— none —</option>' + (srv ? srv.tools : []).filter(t => t.method === 'GET' || t.kind === 'handler')
     .map(t => `<option>${esc(t.name)}</option>`).join('');
@@ -599,9 +628,11 @@ async function openAppBuilder(serverId, slug) {
   document.getElementById('ap_input').value = '{}';
   document.getElementById('ap_goal').value = '';
   document.getElementById('appModalTitle').textContent = slug ? 'Edit app' : 'New app';
-  document.getElementById('ap_launcherRow').style.display = slug ? 'none' : 'flex';
+  document.getElementById('ap_launcherRow').style.display = slug ? 'none' : 'block';
+  renderRefs([]); setPerms([]);
   if (slug) {
     const r = await api('GET', `/servers/${serverId}/apps/${slug}/source`);
+    renderRefs(r.references || []); setPerms(r.permissions || []);
     const list = await api('GET', `/servers/${serverId}/apps`);
     const a = (list.apps || []).find(x => x.slug === slug) || {};
     document.getElementById('ap_name').value = a.name || '';
@@ -624,9 +655,28 @@ function setAppType(type) {
   document.querySelectorAll('#apTypeSeg button').forEach(b => b.classList.toggle('on', b.dataset.val === type));
   document.getElementById('ap_editorLabel').textContent = type === 'html' ? 'HTML (one self-contained file)' : 'Spec (JSON)';
   document.getElementById('ap_fileWrap').style.display = type === 'html' ? 'inline' : 'none';
+  document.getElementById('ap_htmlDecl').style.display = type === 'html' ? 'block' : 'none';
   code.value = appB.drafts[type] ?? starterFor(type);
   appDirty();
 }
+
+function renderRefs(refs) {
+  const box = document.getElementById('ap_refs');
+  box.innerHTML = `<div class="rrow rhead"><div>Type</div><div>URL</div><div>Library name</div><div></div></div>` +
+    refs.map((r, i) => `<div class="rrow" data-i="${i}">
+      <select class="r_type"><option value="resource" ${r.type!=='connection'?'selected':''}>External resources</option><option value="connection" ${r.type==='connection'?'selected':''}>External connection</option></select>
+      <input class="r_url" value="${esc(r.url||'')}" placeholder="https://esm.sh">
+      <input class="r_name" value="${esc(r.name||'')}" placeholder="MCP Apps SDK">
+      <button class="rm" title="Remove" onclick="this.closest('.rrow').remove()">&times;</button></div>`).join('');
+}
+function readRefs() {
+  return [...document.querySelectorAll('#ap_refs .rrow:not(.rhead)')].map(r => ({
+    type: r.querySelector('.r_type').value, url: r.querySelector('.r_url').value.trim(), name: r.querySelector('.r_name').value.trim(),
+  })).filter(r => r.url);
+}
+function addRefRow(ref) { renderRefs([...readRefs(), ref || { type: 'resource', url: '', name: '' }]); }
+function readPerms() { return [...document.querySelectorAll('.ap_perm:checked')].map(c => c.value); }
+function setPerms(list) { document.querySelectorAll('.ap_perm').forEach(c => c.checked = (list || []).includes(c.value)); }
 
 function starterFor(type) {
   const t = appB.templates && appB.templates[type];
@@ -636,7 +686,15 @@ function loadStarter() { document.getElementById('ap_code').value = starterFor(a
 
 function appDirty() {
   const name = v('ap_name') || (appB.type === 'html' ? 'my app' : (() => { try { return JSON.parse(v('ap_code')).title || 'app'; } catch { return 'app'; } })());
-  document.getElementById('ap_launcherName').textContent = 'open_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+  const opt = document.querySelector('#ap_openWith option[value=""]');
+  if (opt) opt.textContent = 'A new tool open_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+}
+
+// When an existing tool opens the app, the preview feeds the app that tool's result.
+function syncResultTool() {
+  const ow = document.getElementById('ap_openWith').value;
+  const rs = document.getElementById('ap_resultTool');
+  if (ow && ow !== '-' && [...rs.options].some(o => o.value === ow)) rs.value = ow;
 }
 
 function attachHtml(input) {
@@ -651,7 +709,7 @@ function attachHtml(input) {
 function appDraft() {
   const code = document.getElementById('ap_code').value;
   const d = { name: v('ap_name'), description: v('ap_desc') };
-  if (appB.type === 'html') return { ...d, source: 'html', html: code };
+  if (appB.type === 'html') return { ...d, source: 'html', html: code, references: readRefs(), permissions: readPerms() };
   let spec;
   try { spec = JSON.parse(code); } catch (e) { return { ...d, source: 'spec', parseError: 'The spec is not valid JSON: ' + e.message }; }
   if (!d.name && spec && spec.title) d.name = spec.title;
@@ -661,11 +719,28 @@ function appDraft() {
 function renderReport(rep) {
   const box = document.getElementById('ap_report');
   const tools = (rep.tools || []).map(t => `<code>${esc(t.name)}</code>${t.write ? ' (write)' : ''}`).join(', ');
+  const fmt = rep.format === 'standard' ? ' · <span class="ui-badge">STANDARD SDK</span>' : rep.format === 'kit' ? ' · <span class="vis-badge">gateway gw</span>' : '';
   box.innerHTML = `<div class="vreport ${rep.ok ? 'ok' : 'bad'}">
-    <b>${rep.ok ? 'Looks good' : `${rep.errors.length} error${rep.errors.length === 1 ? '' : 's'}`}</b>${tools ? ` · calls ${tools}` : ''}
+    <b>${rep.ok ? 'Looks good' : `${rep.errors.length} error${rep.errors.length === 1 ? '' : 's'}`}</b>${fmt}${tools ? ` · calls ${tools}` : ''}
     ${rep.errors.length ? `<ul>${rep.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
     ${rep.warnings.length ? `<ul>${rep.warnings.map(e => `<li class="w">${esc(e)}</li>`).join('')}</ul>` : ''}
+    ${(rep.notes || []).length ? `<ul>${rep.notes.map(e => `<li style="color:var(--ink-soft)">${esc(e)}</li>`).join('')}</ul>` : ''}
   </div>`;
+  // Detected external domains become declared references (like ServiceNow's "Add reference").
+  if (rep.csp && appB.type === 'html') {
+    const refs = readRefs();
+    const add = (type, url) => { if (!refs.some(r => r.type === type && r.url === url)) refs.push({ type, url, name: 'detected' }); };
+    rep.csp.resourceDomains.forEach(u => add('resource', u));
+    rep.csp.connectDomains.forEach(u => add('connection', u));
+    renderRefs(refs);
+  }
+  // A page that renders its opener's result should be opened by a data tool, not a new open_ tool.
+  const ow = document.getElementById('ap_openWith');
+  if (rep.showsResult && ow && ow.value === '' && !appB.slug) {
+    const opts = [...ow.options];
+    const list = opts.find(o => /^list_/.test(o.value)) || opts.find(o => /^(search|get)_/.test(o.value));
+    if (list) { ow.value = list.value; syncResultTool(); }
+  }
 }
 
 async function validateApp() {
@@ -688,13 +763,15 @@ async function saveApp() {
   if (!(await validateApp())) { showErr('appErr', 'Fix the errors above before saving.'); return; }
   const d = appDraft();
   if (!d.name) { showErr('appErr', 'Give the app a name.'); return; }
-  d.launcher = document.getElementById('ap_launcher').checked;
+  const ow = document.getElementById('ap_openWith').value;
+  if (ow === '-') d.launcher = false;
+  else if (ow) d.openWith = ow;
   const r = appB.slug
     ? await api('PUT', `/servers/${appB.serverId}/apps/${appB.slug}`, d)
     : await api('POST', `/servers/${appB.serverId}/apps`, d);
   if (r.error) { if (r.report) renderReport(r.report); showErr('appErr', r.error); return; }
   closeModal('appModal');
-  toast(appB.slug ? 'App updated' : `App created${r.launcher ? ` with tool ${r.launcher.name}` : ''}. Reconnect the MCP client to see it.`);
+  toast(appB.slug ? 'App updated' : `App created${r.launcher ? `, opened by ${r.launcher.name}` : ''}. Reconnect the MCP client to see it.`);
   await loadServers();
   const s = servers.find(x => x.id === appB.serverId);
   detailTab = 'apps';
