@@ -7,7 +7,7 @@ import { bundleStatus, readBundle, renderDraftHtml } from "./apps.js";
 import { buildPrompt, templates, validateHtml, validateSpec, type ValidationReport } from "./app-spec.js";
 import { previewCall } from "./preview.js";
 import { handlerNames } from "./handlers/index.js";
-import type { IdentityMode, MCPServer, Parameter, Tool, ToolUI, UIApp } from "./types.js";
+import type { IdentityMode, MCPServer, Parameter, Tool, ToolUI, UIApp, UIAppPermission, UIAppReference } from "./types.js";
 import type { AppSpec } from "./app-spec-types.js";
 import type { MCPManager } from "./mcp-manager.js";
 import type { SNCredentials } from "./servicenow.js";
@@ -194,7 +194,7 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     if (app.spec) { res.json({ source: "spec", spec: app.spec }); return; }
     if (app.file) {
       const html = await readFile(join(storage.APPS_DATA_DIR, app.file), "utf8").catch(() => "");
-      res.json({ source: "html", html });
+      res.json({ source: "html", html, references: app.references ?? [], permissions: app.permissions ?? [] });
       return;
     }
     res.json({ source: "bundle", bundle: app.bundle });
@@ -206,6 +206,8 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     const draft = (req.body ?? {}) as Draft;
     const name = String(draft.name ?? "").trim();
     if (!name) { res.status(400).json({ error: "name is required" }); return; }
+    const declErr = checkDeclarations(draft);
+    if (declErr) { res.status(400).json({ error: declErr }); return; }
     const report = validateDraft(server, draft);
     if (!report.ok) { res.status(400).json({ error: "The app has errors", report }); return; }
     const opener = draft.openWith ? server.tools.find((t) => t.name === draft.openWith) : undefined;
@@ -216,8 +218,8 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     if (draft.source === "spec") app.spec = draft.spec;
     else {
       app.file = await saveHtml(server, slug, String(draft.html));
-      setCsp(app, report);
     }
+    applyDeclarations(app, draft, report);
 
     storage.updateServer(server.id, { apps: [...(server.apps ?? []), app], appsEnabled: true });
     let launcher: Tool | undefined;
@@ -236,11 +238,14 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     if (!server || !app) { res.status(404).json({ error: "Not found" }); return; }
     if (!isKitApp(app)) { res.status(400).json({ error: "Code apps are edited under apps/ and rebuilt" }); return; }
     const draft = { source: app.spec ? "spec" : "html", ...(req.body ?? {}) } as Draft;
+    const declErr = checkDeclarations(draft);
+    if (declErr) { res.status(400).json({ error: declErr }); return; }
     const report = validateDraft(server, draft);
     if (!report.ok) { res.status(400).json({ error: "The app has errors", report }); return; }
     const next: UIApp = { ...app, name: String(draft.name ?? app.name), description: String(draft.description ?? app.description ?? "") };
     if (draft.source === "spec") { next.spec = draft.spec; next.source = "spec"; delete next.file; }
-    else { next.file = await saveHtml(server, slugOf(app), String(draft.html)); next.source = "html"; delete next.spec; setCsp(next, report); }
+    else { next.file = await saveHtml(server, slugOf(app), String(draft.html)); next.source = "html"; delete next.spec; }
+    applyDeclarations(next, { references: app.references, permissions: app.permissions, ...draft }, report);
     storage.updateServer(server.id, { apps: (server.apps ?? []).map((a) => (a.uri === app.uri ? next : a)) });
     res.json({ app: { ...next, slug: slugOf(next) }, report });
   });
@@ -419,13 +424,47 @@ interface Draft {
   html?: string;
   launcher?: boolean; // add an open_<slug> tool (default true)
   openWith?: string; // instead: link this existing tool to the app
+  references?: UIAppReference[];
+  permissions?: UIAppPermission[];
 }
 
-// External origins an uploaded page uses become its CSP, so the host allows exactly those.
-function setCsp(app: UIApp, report: ValidationReport): void {
-  const csp = report.csp;
-  if (csp && (csp.resourceDomains.length || csp.connectDomains.length)) app.csp = { ...csp };
-  else delete app.csp;
+const PERMISSIONS = new Set(["camera", "microphone", "geolocation", "clipboardWrite"]);
+const ORIGIN = /^(https|wss):\/\/(\*\.)?[a-z0-9.-]+(:\d+)?$/i;
+
+// Checks declared references and permissions; returns an error message or null.
+function checkDeclarations(draft: Draft): string | null {
+  for (const r of draft.references ?? []) {
+    if (r.type !== "resource" && r.type !== "connection") return `Reference type must be resource or connection`;
+    const url = String(r.url ?? "").replace(/\/+$/, "");
+    if (!ORIGIN.test(url)) return `Reference "${r.url}" must be an https origin like https://esm.sh`;
+  }
+  for (const p of draft.permissions ?? []) if (!PERMISSIONS.has(p)) return `Unknown permission ${p}`;
+  return null;
+}
+
+// CSP = declared references, plus any external origin validation found in the page (so a
+// forgotten declaration doesn't silently break the app; the builder shows both).
+function applyDeclarations(app: UIApp, draft: Draft, report: ValidationReport): void {
+  const refs: UIAppReference[] = (draft.references ?? []).map((r) => ({
+    type: r.type,
+    url: String(r.url).replace(/\/+$/, ""),
+    ...(r.name ? { name: String(r.name) } : {}),
+  }));
+  const has = (type: string, url: string) => refs.some((r) => r.type === type && r.url === url);
+  for (const url of report.csp?.resourceDomains ?? []) if (!has("resource", url)) refs.push({ type: "resource", url, name: "detected" });
+  for (const url of report.csp?.connectDomains ?? []) if (!has("connection", url)) refs.push({ type: "connection", url, name: "detected" });
+  if (refs.length) {
+    app.references = refs;
+    app.csp = {
+      resourceDomains: [...new Set(refs.filter((r) => r.type === "resource").map((r) => r.url))],
+      connectDomains: [...new Set(refs.filter((r) => r.type === "connection").map((r) => r.url))],
+    };
+  } else {
+    delete app.references;
+    delete app.csp;
+  }
+  if (draft.permissions?.length) app.permissions = [...new Set(draft.permissions)];
+  else delete app.permissions;
 }
 
 function validateDraft(server: MCPServer, draft: Draft): ValidationReport {

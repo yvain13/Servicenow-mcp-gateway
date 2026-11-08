@@ -190,6 +190,19 @@ How the gateway serves it:
 - **Opened by an existing tool.** An app that renders `ontoolresult` (like a list) is opened by an existing data tool, such as `list_incidents`, rather than a new `open_` tool. The builder suggests one when it sees `ontoolresult`. The preview's **Tool result** runs that tool, so you see real rows.
 - **Tool calls are checked.** Validation checks every `app.callServerTool({ name: "…" })` against the server's tools.
 
+The builder follows the same steps as ServiceNow's MCP Server Console (v1.6), and each field maps to the MCP Apps spec:
+
+| ServiceNow console | Gateway builder | MCP Apps |
+|---|---|---|
+| Label, Description | Name, Description | resource `name`, `description` |
+| App source → Add file | HTML file → attach .html | `resources/read` HTML |
+| Add reference → External Resources | External references → External resources | `_meta.ui.csp.resourceDomains` |
+| Add reference → External Connection | External references → External connection | `_meta.ui.csp.connectDomains` |
+| Permissions | Permissions (microphone, camera, geolocation, clipboard write) | `_meta.ui.permissions` |
+| Tool → MCP app field | Opened by (or the tool card's **App** picker) | tool `_meta.ui.resourceUri` |
+
+Validation also adds any external domain it finds in the page that isn't declared (named "detected"), so a forgotten reference doesn't silently break the app.
+
 The gateway's own helper is still available. Pages without the SDK get `window.gw` injected before their scripts:
 
 - `gw.call(tool, args)`, `gw.onInput(fn)`, `gw.onResult(fn)`

@@ -261,7 +261,7 @@ describe("app routes", () => {
     const file = join(APPS_DATA_DIR, r.body.app.file);
     expect(existsSync(file)).toBe(true);
     const src = await call("GET", "/servers/s1/apps/board/source");
-    expect(src.body).toEqual({ source: "html", html });
+    expect(src.body).toEqual({ source: "html", html, references: [], permissions: [] });
     const upd = await call("PUT", "/servers/s1/apps/board", { html: html.replace("Board", "Board v2") });
     expect(upd.status).toBe(200);
     expect((await call("GET", "/servers/s1/apps/board/source")).body.html).toContain("Board v2");
@@ -280,11 +280,39 @@ describe("app routes", () => {
     expect(r.status).toBe(201);
     expect(r.body.launcher).toMatchObject({ name: "list_incidents", ui: { resourceUri: "ui://incident-ops/incident-list" } });
     expect(r.body.app.csp).toEqual({ resourceDomains: ["https://img.example.com"], connectDomains: [] });
+    expect(r.body.app.references).toEqual([{ type: "resource", url: "https://img.example.com", name: "detected" }]);
     const tools = (await call("GET", "/servers/s1/tools")).body.map((t: any) => t.name);
     expect(tools).not.toContain("open_incident_list");
     await call("DELETE", "/servers/s1/apps/incident-list");
     const after = (await call("GET", "/servers/s1/tools")).body.find((t: any) => t.name === "list_incidents");
     expect(after.ui?.resourceUri).toBeUndefined();
+  });
+
+  it("stores declared references and permissions like ServiceNow's console, and serves them as _meta.ui", async () => {
+    const html = `<html><body><script type="module">
+      import { App } from "https://esm.sh/@modelcontextprotocol/ext-apps@1.7.2/app-with-deps";
+      const app = new App({ name: "t", version: "1" }); app.ontoolresult = () => {}; app.connect();</script></body></html>`;
+    const bad = await call("POST", "/servers/s1/apps", { name: "T", source: "html", html, references: [{ type: "resource", url: "esm.sh" }] });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toMatch(/https origin/);
+    const r = await call("POST", "/servers/s1/apps", {
+      name: "Incident table", source: "html", html, openWith: "list_incidents",
+      references: [{ type: "resource", url: "https://esm.sh/", name: "MCP Apps SDK" }, { type: "connection", url: "https://api.example.com" }],
+      permissions: ["clipboardWrite"],
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.app.references).toEqual([{ type: "resource", url: "https://esm.sh", name: "MCP Apps SDK" }, { type: "connection", url: "https://api.example.com" }]);
+    expect(r.body.app.csp).toEqual({ resourceDomains: ["https://esm.sh"], connectDomains: ["https://api.example.com"] });
+    const { appMeta } = await import("../src/apps.js");
+    expect(appMeta(r.body.app)).toEqual({
+      ui: { csp: { connectDomains: ["https://api.example.com"], resourceDomains: ["https://esm.sh"] }, prefersBorder: true, permissions: { clipboardWrite: {} } },
+    });
+    const src = await call("GET", "/servers/s1/apps/incident-table/source");
+    expect(src.body.permissions).toEqual(["clipboardWrite"]);
+    // Editing the HTML keeps the declarations.
+    await call("PUT", "/servers/s1/apps/incident-table", { html: html.replace('"t"', '"t2"') });
+    expect((await call("GET", "/servers/s1/apps")).body.apps.find((a: any) => a.slug === "incident-table").permissions).toEqual(["clipboardWrite"]);
+    await call("DELETE", "/servers/s1/apps/incident-table");
   });
 
   it("preview calls dry-run writes", async () => {

@@ -172,15 +172,15 @@ export async function renderDraftHtml(html: string): Promise<string> {
 }
 
 export function appMeta(app: UIApp): Record<string, unknown> {
-  return {
-    ui: {
-      csp: {
-        connectDomains: app.csp?.connectDomains ?? [],
-        resourceDomains: app.csp?.resourceDomains ?? [],
-      },
-      prefersBorder: true,
+  const ui: Record<string, unknown> = {
+    csp: {
+      connectDomains: app.csp?.connectDomains ?? [],
+      resourceDomains: app.csp?.resourceDomains ?? [],
     },
+    prefersBorder: true,
   };
+  if (app.permissions?.length) ui["permissions"] = Object.fromEntries(app.permissions.map((p) => [p, {}]));
+  return { ui };
 }
 
 function escapeHtml(s: string): string {
