@@ -173,6 +173,21 @@
   .err-msg.show{display:block}
   .toast{position:fixed;bottom:28px;right:28px;background:var(--canopy-deep);color:#fff;font-size:13px;font-weight:600;padding:12px 18px;border-radius:11px;box-shadow:var(--shadow);opacity:0;transition:.3s;z-index:100;pointer-events:none}
   .toast.show{opacity:1}
+  /* App builder */
+  .modal.wide{max-width:1120px}
+  .builder{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px}
+  @media (max-width:900px){.builder{grid-template-columns:1fr}}
+  .builder textarea.code{font-family:var(--mono);font-size:12px;line-height:1.5;min-height:300px;white-space:pre;tab-size:2}
+  .preview-box{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:#fff}
+  .preview-box iframe{width:100%;height:520px;border:0;display:block}
+  .preview-bar{display:flex;gap:8px;align-items:center;padding:8px 10px;background:var(--oat);border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-soft)}
+  .vreport{font-size:12px;border-radius:9px;padding:10px 12px;margin-top:10px;line-height:1.55}
+  .vreport.ok{background:var(--canopy-soft);color:var(--canopy-deep);border:1px solid var(--canopy-line)}
+  .vreport.bad{background:#FEE2E2;color:#991B1B;border:1px solid #FECACA}
+  .vreport ul{margin:4px 0 0 18px}
+  .vreport .w{color:var(--warn)}
+  .row-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .app-card .acts{display:flex;gap:6px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -320,6 +335,77 @@
       <button class="btn btn-ghost btn-sm" onclick="testTool()">Test against instance</button>
       <button class="btn btn-ghost" onclick="closeModal('toolModal')">Cancel</button>
       <button class="btn btn-primary" id="toolModalSubmit" onclick="saveTool()">Save Tool</button>
+    </div>
+  </div>
+</div>
+
+<!-- App Builder Modal -->
+<div class="scrim" id="appModal">
+  <div class="modal wide">
+    <div class="modal-head">
+      <div><h3 id="appModalTitle">New app</h3><p>Pick a type and fill in a spec (no code), or attach one HTML file. It is checked against this server's tools before it is saved.</p></div>
+      <button class="x" onclick="closeModal('appModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="builder">
+        <div>
+          <div class="two">
+            <div class="field"><label>Name</label><input id="ap_name" placeholder="Report an incident"></div>
+            <div class="field"><label>Description <span class="hint">shown to the model</span></label><input id="ap_desc" placeholder="Creates an incident in ServiceNow"></div>
+          </div>
+          <div class="field">
+            <label>Type</label>
+            <div class="seg" id="apTypeSeg">
+              <button class="on" data-val="form" onclick="setAppType('form')">Form</button>
+              <button data-val="view" onclick="setAppType('view')">Table / chart</button>
+              <button data-val="approval" onclick="setAppType('approval')">Approval cards</button>
+              <button data-val="html" onclick="setAppType('html')">HTML file</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Describe it <span class="hint">optional: turns into a prompt you paste into Claude</span></label>
+            <textarea id="ap_goal" rows="2" placeholder="A form to raise a P1 incident with a CI lookup and an urgency picker"></textarea>
+            <div class="row-btns" style="margin-top:8px">
+              <button class="btn btn-ghost btn-sm" onclick="copyAppPrompt()">Copy prompt for Claude</button>
+              <span class="hint" style="font-size:11px;color:var(--ink-faint)">Paste Claude's answer into the editor below.</span>
+            </div>
+          </div>
+          <div class="field">
+            <label><span id="ap_editorLabel">Spec (JSON)</span>
+              <span class="hint"><a href="#" onclick="loadStarter();return false">load starter</a></span>
+              <span class="hint" id="ap_fileWrap" style="display:none"> · <label style="display:inline;font-weight:400;cursor:pointer;text-decoration:underline">attach .html<input type="file" accept=".html,.htm,text/html" id="ap_file" style="display:none" onchange="attachHtml(this)"></label></span>
+            </label>
+            <textarea id="ap_code" class="code" spellcheck="false" oninput="appDirty()"></textarea>
+          </div>
+          <label style="font-size:12.5px;color:var(--ink-soft);display:flex;gap:8px;align-items:center" id="ap_launcherRow">
+            <input type="checkbox" id="ap_launcher" checked> Add a tool <code id="ap_launcherName">open_…</code> the model calls to open this app
+          </label>
+          <div id="ap_report"></div>
+        </div>
+        <div>
+          <div class="preview-box">
+            <div class="preview-bar">
+              <b>Preview</b><span>reads hit your instance · writes are dry-run</span>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="previewApp()">Refresh</button>
+            </div>
+            <iframe id="ap_frame" sandbox="allow-scripts allow-forms" title="App preview"></iframe>
+          </div>
+          <div class="field" style="margin-top:12px">
+            <label>Tool input <span class="hint">JSON the model would pass (prefill), sent on Refresh</span></label>
+            <textarea id="ap_input" class="code" style="min-height:60px" spellcheck="false">{}</textarea>
+          </div>
+          <div class="field">
+            <label>Tool result <span class="hint">for apps without a source: run this read tool with the input above</span></label>
+            <select id="ap_resultTool"><option value="">— none —</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="err-msg" id="appErr"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="validateApp()">Validate</button>
+      <button class="btn btn-ghost" onclick="closeModal('appModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveApp()">Save app</button>
     </div>
   </div>
 </div>
@@ -483,10 +569,187 @@ async function renderApps(s) {
         <span class="bstat ${a.status.built?'ok':'missing'}" style="margin-left:auto">${a.status.built?'built':'not built'}</span>
       </div>
       <div class="meta"><b>${esc(a.name)}</b>${a.description?' — '+esc(a.description):''}<br>
-        Bundle <code>${esc(a.bundle)}</code>${a.status.built?` · ${(a.status.bytes/1024).toFixed(0)} KB · built ${esc(new Date(a.status.builtAt).toLocaleString())}`:' · run <code>npm run build:apps</code>'}<br>
+        ${appSourceLine(a)}<br>
         Linked tools: ${a.tools.length?a.tools.map(n=>`<code>${esc(n)}</code>`).join(', '):'none'}
-      </div></div>`).join('') : '<div class="no-tools">No ui:// resources on this server. Apps are code bundles under apps/, declared in the server\'s "apps" list in data/store.json.</div>');
+      </div>
+      ${a.editable?`<div class="acts"><button class="btn btn-ghost btn-sm" onclick="openAppBuilder('${s.id}','${esc(a.slug)}')">Edit</button><button class="btn btn-ghost btn-sm" onclick="deleteApp('${s.id}','${esc(a.slug)}')">Delete</button></div>`:''}
+      </div>`).join('') : '<div class="no-tools">No apps yet. Create one from a form, table/chart or approval-card spec, or attach an HTML file.</div>');
+  el.insertAdjacentHTML('afterbegin', `<div style="display:flex;justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="openAppBuilder('${s.id}')">+ New app</button></div>`);
 }
+
+function appSourceLine(a) {
+  const st = a.status;
+  if (st.source === 'spec') return `No-code <code>${esc(a.spec && a.spec.type || 'spec')}</code> app, rendered by the App Kit${st.built?'':' · run <code>npm run build:apps</code> to build the kit'}`;
+  if (st.source === 'html') return `Uploaded HTML <code>${esc(a.file)}</code>${st.built?` · ${(st.bytes/1024).toFixed(0)} KB`:' · file missing'}`;
+  return `Bundle <code>${esc(a.bundle)}</code>${st.built?` · ${(st.bytes/1024).toFixed(0)} KB · built ${esc(new Date(st.builtAt).toLocaleString())}`:' · run <code>npm run build:apps</code>'}`;
+}
+
+// ── App builder ─────────────────────────────────────────────────────────────
+let appB = { serverId: null, slug: null, type: 'form', drafts: {}, templates: null };
+
+async function openAppBuilder(serverId, slug) {
+  appB = { serverId, slug: slug || null, type: null, drafts: {}, templates: appB.templates };
+  if (!appB.templates) appB.templates = await api('GET', '/app-kit/templates');
+  const srv = servers.find(x => x.id === serverId);
+  const sel = document.getElementById('ap_resultTool');
+  sel.innerHTML = '<option value="">— none —</option>' + (srv ? srv.tools : []).filter(t => t.method === 'GET' || t.kind === 'handler')
+    .map(t => `<option>${esc(t.name)}</option>`).join('');
+  document.getElementById('ap_report').innerHTML = '';
+  showErr('appErr', '');
+  document.getElementById('ap_input').value = '{}';
+  document.getElementById('ap_goal').value = '';
+  document.getElementById('appModalTitle').textContent = slug ? 'Edit app' : 'New app';
+  document.getElementById('ap_launcherRow').style.display = slug ? 'none' : 'flex';
+  if (slug) {
+    const r = await api('GET', `/servers/${serverId}/apps/${slug}/source`);
+    const list = await api('GET', `/servers/${serverId}/apps`);
+    const a = (list.apps || []).find(x => x.slug === slug) || {};
+    document.getElementById('ap_name').value = a.name || '';
+    document.getElementById('ap_desc').value = a.description || '';
+    const type = r.source === 'html' ? 'html' : (r.spec && r.spec.type) || 'form';
+    appB.drafts[type] = r.source === 'html' ? r.html : JSON.stringify(r.spec, null, 2);
+    setAppType(type);
+  } else {
+    clearId('ap_name'); clearId('ap_desc');
+    setAppType('form');
+  }
+  openModal('appModal');
+  previewApp();
+}
+
+function setAppType(type) {
+  const code = document.getElementById('ap_code');
+  if (appB.type) appB.drafts[appB.type] = code.value;
+  appB.type = type;
+  document.querySelectorAll('#apTypeSeg button').forEach(b => b.classList.toggle('on', b.dataset.val === type));
+  document.getElementById('ap_editorLabel').textContent = type === 'html' ? 'HTML (one self-contained file)' : 'Spec (JSON)';
+  document.getElementById('ap_fileWrap').style.display = type === 'html' ? 'inline' : 'none';
+  code.value = appB.drafts[type] ?? starterFor(type);
+  appDirty();
+}
+
+function starterFor(type) {
+  const t = appB.templates && appB.templates[type];
+  return typeof t === 'string' ? t : JSON.stringify(t || {}, null, 2);
+}
+function loadStarter() { document.getElementById('ap_code').value = starterFor(appB.type); appDirty(); }
+
+function appDirty() {
+  const name = v('ap_name') || (appB.type === 'html' ? 'my app' : (() => { try { return JSON.parse(v('ap_code')).title || 'app'; } catch { return 'app'; } })());
+  document.getElementById('ap_launcherName').textContent = 'open_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+}
+
+function attachHtml(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => { document.getElementById('ap_code').value = reader.result; if (!v('ap_name')) document.getElementById('ap_name').value = f.name.replace(/\.html?$/i, ''); appDirty(); validateApp(); previewApp(); };
+  reader.readAsText(f);
+  input.value = '';
+}
+
+function appDraft() {
+  const code = document.getElementById('ap_code').value;
+  const d = { name: v('ap_name'), description: v('ap_desc') };
+  if (appB.type === 'html') return { ...d, source: 'html', html: code };
+  let spec;
+  try { spec = JSON.parse(code); } catch (e) { return { ...d, source: 'spec', parseError: 'The spec is not valid JSON: ' + e.message }; }
+  if (!d.name && spec && spec.title) d.name = spec.title;
+  return { ...d, source: 'spec', spec };
+}
+
+function renderReport(rep) {
+  const box = document.getElementById('ap_report');
+  const tools = (rep.tools || []).map(t => `<code>${esc(t.name)}</code>${t.write ? ' (write)' : ''}`).join(', ');
+  box.innerHTML = `<div class="vreport ${rep.ok ? 'ok' : 'bad'}">
+    <b>${rep.ok ? 'Looks good' : `${rep.errors.length} error${rep.errors.length === 1 ? '' : 's'}`}</b>${tools ? ` · calls ${tools}` : ''}
+    ${rep.errors.length ? `<ul>${rep.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+    ${rep.warnings.length ? `<ul>${rep.warnings.map(e => `<li class="w">${esc(e)}</li>`).join('')}</ul>` : ''}
+  </div>`;
+}
+
+async function validateApp() {
+  const d = appDraft();
+  if (d.parseError) { renderReport({ ok: false, errors: [d.parseError], warnings: [], tools: [] }); return false; }
+  const rep = await api('POST', `/servers/${appB.serverId}/apps/validate`, d);
+  renderReport(rep);
+  return rep.ok;
+}
+
+async function copyAppPrompt() {
+  const r = await api('POST', `/servers/${appB.serverId}/apps/prompt`, { format: appB.type, goal: v('ap_goal') });
+  if (r.error) { toast(r.error); return; }
+  try { await navigator.clipboard.writeText(r.prompt); toast('Prompt copied: paste it into Claude'); }
+  catch { document.getElementById('ap_code').value = r.prompt; toast('Clipboard blocked: the prompt is in the editor'); }
+}
+
+async function saveApp() {
+  showErr('appErr', '');
+  if (!(await validateApp())) { showErr('appErr', 'Fix the errors above before saving.'); return; }
+  const d = appDraft();
+  if (!d.name) { showErr('appErr', 'Give the app a name.'); return; }
+  d.launcher = document.getElementById('ap_launcher').checked;
+  const r = appB.slug
+    ? await api('PUT', `/servers/${appB.serverId}/apps/${appB.slug}`, d)
+    : await api('POST', `/servers/${appB.serverId}/apps`, d);
+  if (r.error) { if (r.report) renderReport(r.report); showErr('appErr', r.error); return; }
+  closeModal('appModal');
+  toast(appB.slug ? 'App updated' : `App created${r.launcher ? ` with tool ${r.launcher.name}` : ''}. Reconnect the MCP client to see it.`);
+  await loadServers();
+  const s = servers.find(x => x.id === appB.serverId);
+  detailTab = 'apps';
+  if (s) renderDetail(s);
+}
+
+async function deleteApp(serverId, slug) {
+  if (!confirm(`Delete the app "${slug}" and its open_ tool?`)) return;
+  const r = await api('DELETE', `/servers/${serverId}/apps/${slug}`);
+  if (r.error) { toast(r.error); return; }
+  toast('App deleted');
+  await loadServers();
+  const s = servers.find(x => x.id === serverId);
+  if (s) renderDetail(s);
+}
+
+// A minimal MCP Apps host for the preview iframe: answers ui/initialize, forwards tools/call
+// to the gateway (reads live, writes dry-run) and sends the tool input/result.
+let previewSeq = 0;
+async function previewApp() {
+  const frame = document.getElementById('ap_frame');
+  const d = appDraft();
+  if (d.parseError) { frame.srcdoc = `<p style="font:13px system-ui;padding:14px;color:#991B1B">${esc(d.parseError)}</p>`; return; }
+  const seq = ++previewSeq;
+  const r = await fetch(`${API}/servers/${appB.serverId}/apps/render`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) });
+  if (seq !== previewSeq) return;
+  frame.srcdoc = await r.text();
+}
+
+window.addEventListener('message', async (e) => {
+  const frame = document.getElementById('ap_frame');
+  if (!frame || e.source !== frame.contentWindow) return;
+  const m = e.data;
+  if (!m || m.jsonrpc !== '2.0') return;
+  const reply = (result) => frame.contentWindow.postMessage({ jsonrpc: '2.0', id: m.id, result }, '*');
+  const notify = (method, params) => frame.contentWindow.postMessage({ jsonrpc: '2.0', method, params }, '*');
+  if (m.method === 'ui/initialize') {
+    return reply({ protocolVersion: m.params.protocolVersion, hostInfo: { name: 'gateway-preview', version: '1' },
+      hostCapabilities: { serverTools: {}, updateModelContext: { text: {} }, openLinks: {} }, hostContext: { theme: 'light', displayMode: 'inline' } });
+  }
+  if (m.method === 'ui/notifications/initialized') {
+    let input = {};
+    try { input = JSON.parse(document.getElementById('ap_input').value || '{}'); } catch { toast('Tool input is not valid JSON'); }
+    notify('ui/notifications/tool-input', { arguments: input });
+    const tool = document.getElementById('ap_resultTool').value;
+    const result = tool ? await api('POST', `/servers/${appB.serverId}/apps/preview-call`, { name: tool, arguments: input })
+      : { content: [{ type: 'text', text: 'preview' }], structuredContent: input };
+    notify('ui/notifications/tool-result', result);
+    return;
+  }
+  if (m.method === 'tools/call') return reply(await api('POST', `/servers/${appB.serverId}/apps/preview-call`, m.params));
+  if (m.method === 'ui/update-model-context') { console.log('[preview] model context:', m.params); return reply({}); }
+  if (m.method === 'ui/open-link') { window.open(m.params.url, '_blank', 'noopener'); return reply({}); }
+  if (m.id !== undefined) reply({});
+});
 
 async function setServerFlag(id, patch) {
   const r = await api('PATCH', `/servers/${id}`, patch);

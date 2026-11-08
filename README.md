@@ -93,6 +93,8 @@ How it works:
 
 > `create_change` gained optional `cmdb_ci`, `assignment_group`, `start_date`, `end_date`, `category`, `risk`, `impact` and `std_change_template` parameters, and now enforces the same validation, so calls that omit a CI, group or window are rejected with field errors instead of creating an incomplete record. `cmdb_ci` and `assignment_group` accept a sys_id or an exact name.
 
+After **Request approval**, the form shows the approvals ServiceNow generated for the change (via the app-only `change_approval_status` tool), refreshing until they appear. If one of them is the caller's, the form shows Approve and Reject in place, using the same `change_approval_decide` tool as the inbox, and then shows the change move on. To demo it on a PDI as `admin`, assign the change to a group admin belongs to (on a stock PDI, **Team Development Code Reviewers**), set change-ops identity to **Per-user login (demo)**, and connect with admin's login as shown below.
+
 ### Change approval and identity
 
 `change_approval_decide` writes `state` and `comments` to `sysapproval_approver`; ServiceNow's workflow moves the change on from there. It re-reads the approval first and returns `stale` if it was decided or reassigned elsewhere, or `not_yours` if the caller isn't the approver or an active delegate. It is app-only, so the model can open the inbox and discuss risk but not record a decision.
@@ -122,7 +124,63 @@ Per-user OAuth (ServiceNow as authorization server, the gateway forwarding each 
 - Search text is stripped of `^` and `=` before it goes into `sysparm_query`, so typed text can't add encoded-query clauses.
 - The management UI binds to `127.0.0.1` by default (`MANAGEMENT_HOST` to change), since it can edit tools and credentials.
 
-### Building and authoring apps
+### Creating apps without code (App Kit)
+
+Most apps don't need a build. In the management UI, open a server's **Apps** tab and choose **+ New app**. Pick one of four types:
+
+| Type | What it is | You write |
+|---|---|---|
+| **Form** | Fields → one submit tool (e.g. create an incident) | JSON spec |
+| **Table / chart** | Rows from a read tool as a table, bar chart (count by a field) or stat tiles | JSON spec |
+| **Approval cards** | One card per row with buttons that call a tool (approve, reject, close…) | JSON spec |
+| **HTML file** | Anything else: attach one self-contained `.html` | HTML that calls `gw.call()` |
+
+The builder gives you:
+
+- **Starter templates** for each type.
+- **Copy prompt for Claude**: describe the app in a sentence, and the button copies a prompt containing the spec format and this server's real tools (names, params, read/write). Paste it into Claude and paste the answer back into the editor.
+- **Validate**: checks the spec or HTML against the server before saving. It catches unknown tools, model-only tools, required params no field provides, write tools used as data sources, arguments a REST tool would drop, writes without confirmation, external scripts or styles, and direct ServiceNow URLs.
+- **Live preview**: the app runs in a built-in host. Reads go to your instance. Writes are dry-run and never sent. Use **Tool input** to test prefill.
+- **Save**: stores the app (spec in `store.json`, HTML in `data/apps/<server>/<slug>.html`), serves it as `ui://<server>/<slug>`, turns on MCP Apps for the server, and adds an `open_<slug>` tool the model calls to open it. For forms, that tool takes the form's fields as optional arguments, so the model can prefill them.
+
+Example form spec:
+
+```json
+{
+  "type": "form",
+  "title": "Report an incident",
+  "fields": [
+    { "name": "short_description", "required": true },
+    { "name": "urgency", "type": "select", "options": [{ "value": "1", "label": "High" }, { "value": "3", "label": "Low" }] },
+    { "name": "cmdb_ci", "label": "Configuration item", "type": "lookup",
+      "lookup": { "tool": "list_cis", "args": { "sysparm_query": "nameLIKE{{text}}" } } }
+  ],
+  "submit": { "tool": "create_incident", "label": "Create incident" },
+  "result": { "title": "Created {{result.number}}" }
+}
+```
+
+Templates in `args`:
+
+- `{{field}}`: a form value or a field of the card's row.
+- `{{input.x}}`: what the model passed to the open tool.
+- `{{comment}}`: the comment typed on an approval card.
+- `{{text}}`: what the user typed in a lookup.
+
+ServiceNow `{ value, display_value }` pairs display correctly, and the raw value is what gets sent. The full format is in `src/app-spec-types.ts`.
+
+Uploaded HTML gets `window.gw` injected before its own scripts:
+
+- `gw.call(tool, args)`, `gw.onInput(fn)`, `gw.onResult(fn)`
+- `gw.confirm({ title })`, `gw.setContext(text)`
+- `gw.mount(el, spec)` to embed a spec inside custom HTML
+- `gw.data` helpers
+
+Pages also get the shared CSS (`.card`, `.field`, `button.primary`, `table.grid`…) and the host's light/dark theme.
+
+All of this runs on one prebuilt script, `apps/_kit/dist/kit.js`, which `npm run build:apps` builds once. Code apps like the change form are still the way to go for heavier logic.
+
+### Building code apps
 
 Apps live under `apps/<name>/` (an `index.html` + TypeScript) and are built with Vite and `vite-plugin-singlefile` into one self-contained `apps/<name>/dist/index.html`. `apps/_shared/` holds the shell every app uses: host connection, theme, loading and error states, a confirm dialog, and `call(tool, args)`.
 
@@ -211,12 +269,16 @@ src/
   mcp-instance.ts   # Express + StreamableHTTPServerTransport per MCP server (tools, ui:// resources)
   servicenow.ts     # REST client + tool dispatcher (Table API / Scripted REST)
   sn-client.ts      # ServiceNow client used by code-backed handlers
-  handlers/         # code-backed tools: demo.*, change.*, approvals.*
-  apps.ts           # ui:// bundle loading
+  handlers/         # code-backed tools: demo.*, change.*, approvals.*, app.open
+  apps.ts           # ui:// resource HTML: built bundles, spec apps, uploaded HTML (+ App Kit)
+  app-spec.ts       # no-code app validation, starter templates, Claude prompt
+  app-spec-types.ts # the form / view / approval spec format
+  preview.ts        # tool calls from the builder preview (reads live, writes dry-run)
   audit.ts, rate-limit.ts, idempotency.ts
   storage.ts        # JSON file persistence
   types.ts          # shared types
 apps/
+  _kit/             # App Kit: renders specs, injects window.gw into uploaded HTML
   _shared/          # app shell (connect, theme, confirm dialog, call helper)
   change-create/    # change form app
   change-approvals/ # approval inbox app
@@ -226,6 +288,7 @@ public/
   index.html        # single-file management UI
 data/
   store.json        # persisted server + tool definitions (checked in)
+  apps/             # uploaded HTML apps
 ```
 
 ## Scripts
@@ -233,7 +296,7 @@ data/
 | Script | Purpose |
 |---|---|
 | `npm run dev` | Build apps, then watch apps and run the server with `tsx watch` |
-| `npm run build:apps` | Build every app under `apps/` into single-file bundles |
+| `npm run build:apps` | Build the App Kit and every app under `apps/` into single-file bundles |
 | `npm run build` | Build apps, then TypeScript compile to `dist/` |
 | `npm test` | Unit and protocol tests (vitest) |
 | `npm run test:e2e` | Drive the app bundles in headless Chromium through a minimal host (needs Playwright) |

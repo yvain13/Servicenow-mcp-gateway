@@ -303,7 +303,7 @@ function showResult(res: { number: string; sys_id: string; state: string; url: s
     "div",
     { class: "card" },
     el("h1", {}, `${res.number} created`),
-    el("p", {}, `${res.type[0]!.toUpperCase() + res.type.slice(1)} change, state `, el("strong", {}, res.state), ". ", link)
+    el("p", {}, `${res.type[0]!.toUpperCase() + res.type.slice(1)} change, state `, el("strong", { id: "chg-state" }, res.state), ". ", link)
   );
   const msg = el("div");
   card.append(msg);
@@ -316,6 +316,7 @@ function showResult(res: { number: string; sys_id: string; state: string; url: s
         banner(msg, "ok", `${r.number} moved to ${r.state}. Approvals are being generated.`);
         reqBtn.remove();
         void shell.setModelContext(`Change ${r.number} was moved to ${r.state} for approval.`, { change: { ...res, state: r.state } });
+        card.append(approvalsPanel(res));
       } catch (err) {
         banner(msg, "error", errorMessage(err));
         reqBtn.disabled = false;
@@ -324,6 +325,125 @@ function showResult(res: { number: string; sys_id: string; state: string; url: s
     card.append(el("div", { class: "actions" }, reqBtn));
   }
   root.replaceChildren(card);
+}
+
+// ── approvals for the submitted change ──────────────────────────────────────
+interface ApprovalStatus {
+  change: { number: string; state: string; approval: string };
+  approvals: { approval_sys_id: string; approver: string; state: string; state_label: string; mine: boolean }[];
+  decisions_enabled: boolean;
+  caller: string;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Shows the approvals ServiceNow generated for the change, live, and lets the caller
+// approve or reject their own pending approval in place. The decision goes through the
+// same app-only change_approval_decide tool as the approvals inbox.
+function approvalsPanel(res: { number: string; sys_id: string }): HTMLElement {
+  const panel = el("div", { class: "approvals" }, el("h2", {}, "Approvals"));
+  const body = el("div", { class: "muted" }, "Waiting for ServiceNow to generate approvals…");
+  panel.append(body);
+  let busy = false;
+
+  const load = () => shell.call<ApprovalStatus>("change_approval_status", { change_sys_id: res.sys_id });
+
+  // Poll until approvals appear (the workflow generates them asynchronously), or until
+  // the change state moves on after a decision.
+  async function poll(until: (s: ApprovalStatus) => boolean, tries = 15): Promise<void> {
+    for (let i = 0; i < tries; i++) {
+      try {
+        const st = await load();
+        render(st);
+        if (until(st)) return;
+      } catch (err) {
+        banner(body, "error", errorMessage(err));
+        return;
+      }
+      await sleep(2000);
+    }
+  }
+
+  function render(st: ApprovalStatus): void {
+    const rows = st.approvals.map((a) => {
+      const line = el(
+        "div",
+        { class: "appr-row" },
+        el("span", {}, a.approver, ...(a.mine ? [" ", el("span", { class: "pill" }, "you")] : [])),
+        el("span", { class: `pill state-${a.state}` }, a.state_label)
+      );
+      return line;
+    });
+    const summary = el(
+      "p",
+      {},
+      `${st.change.number} is `,
+      el("strong", {}, st.change.state),
+      ` · approval ${st.change.approval.toLowerCase()}`
+    );
+    const head = document.getElementById("chg-state");
+    if (head) head.textContent = st.change.state;
+    const mine = st.approvals.find((a) => a.mine && a.state === "requested");
+    const children: (Node | string)[] = [summary, ...rows];
+    if (!st.approvals.length) children.push(el("p", { class: "muted" }, "No approvals yet…"));
+    if (mine && st.decisions_enabled) children.push(decideBox(st, mine.approval_sys_id));
+    else if (mine) {
+      children.push(
+        el("div", { class: "banner warn" }, "You have a pending approval, but this server uses a shared service account. Connect with your own ServiceNow login to approve here.")
+      );
+    } else if (st.approvals.length && !st.approvals.some((a) => a.mine)) {
+      children.push(el("p", { class: "muted" }, `No approval for ${st.caller} on this change.`));
+    }
+    if (!busy) body.replaceChildren(...children);
+    body.className = "";
+  }
+
+  function decideBox(st: ApprovalStatus, approvalId: string): HTMLElement {
+    const box = el("div", { class: "decide" });
+    const msg = el("div");
+    const comments = el("textarea", { rows: "2", placeholder: "Comments (required to reject)", maxlength: "4000" }) as HTMLTextAreaElement;
+    const approve = el("button", { type: "button", class: "primary" }, "Approve");
+    const reject = el("button", { type: "button", class: "danger" }, "Reject");
+    const go = async (decision: "approved" | "rejected") => {
+      const text = comments.value.trim();
+      if (decision === "rejected" && !text) {
+        banner(msg, "error", "Add a comment to reject.");
+        comments.focus();
+        return;
+      }
+      busy = true;
+      const ok = await shell.confirm({
+        title: `${decision === "approved" ? "Approve" : "Reject"} ${st.change.number}?`,
+        details: [["Change", st.change.number], ["Decision", decision], ["Comment", text]],
+        confirmLabel: decision === "approved" ? "Approve" : "Reject",
+        danger: decision === "rejected",
+      });
+      if (!ok) { busy = false; return; }
+      approve.disabled = reject.disabled = true;
+      try {
+        const r = await shell.call<{ number: string; decision: string; decided_at: string }>("change_approval_decide", {
+          approval_sys_id: approvalId,
+          decision,
+          comments: text || undefined,
+        });
+        void shell.setModelContext(`The user ${r.decision} ${r.number} at ${r.decided_at}.`, { decision: r });
+        busy = false;
+        const before = st.change.state;
+        await poll((s) => s.change.state !== before, 8);
+      } catch (err) {
+        busy = false;
+        banner(msg, "error", errorMessage(err));
+        approve.disabled = reject.disabled = false;
+      }
+    };
+    approve.onclick = () => go("approved");
+    reject.onclick = () => go("rejected");
+    box.append(el("strong", {}, "Your decision"), msg, comments, el("div", { class: "actions" }, reject, approve));
+    return box;
+  }
+
+  void poll((s) => s.approvals.length > 0);
+  return panel;
 }
 
 // ── prefill + boot ───────────────────────────────────────────────────────────

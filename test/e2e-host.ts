@@ -18,7 +18,43 @@ process.env["STORE_FILE"] = join(dir, "store.json");
 process.env["AUDIT_LOG"] = join(dir, "audit.log");
 const real = JSON.parse(readFileSync("data/store.json", "utf8"));
 const changeOps = real.servers.find((s: any) => s.name === "change-ops");
-const PORTS = { service: 47901, user: 47902 };
+const PORTS = { service: 47901, user: 47902, kit: 47903 };
+// No-code App Kit apps on a plain Table API server.
+const Q = (name: string, required = false, inn = "query") => ({ name, description: name, type: "string", required, in: inn });
+const launcher = (name: string, uri: string, params: any[] = []) => ({ id: name, name, description: name, method: "POST", endpoint: "", apiType: "scripted", parameters: params, kind: "handler", handler: "app.open", ui: { resourceUri: uri, visibility: ["model", "app"] } });
+const kitServer = {
+  id: "kit", name: "incident-kit", description: "", port: PORTS.kit, appsEnabled: true,
+  apps: [
+    { uri: "ui://incident-kit/report", name: "Report an incident", source: "spec", spec: {
+      type: "form", title: "Report an incident",
+      fields: [
+        { name: "short_description", label: "Short description", required: true },
+        { name: "urgency", type: "select", options: [{ value: "1", label: "High" }, { value: "3", label: "Low" }], default: "3" },
+        { name: "cmdb_ci", label: "Configuration item", type: "lookup", lookup: { tool: "list_cis", args: { sysparm_query: "nameLIKE{{text}}" } } },
+      ],
+      submit: { tool: "create_incident", label: "Create incident" },
+      result: { title: "Created {{result.number}}", fields: [{ field: "result.urgency", label: "Urgency" }] } } },
+    { uri: "ui://incident-kit/board", name: "Board", source: "spec", spec: {
+      type: "view", title: "Open incidents by priority", display: "bar", groupBy: "priority",
+      source: { tool: "list_incidents", args: { sysparm_query: "active=true", sysparm_display_value: "true" } } } },
+    { uri: "ui://incident-kit/approve", name: "Resolve queue", source: "spec", spec: {
+      type: "approval", title: "Waiting for sign-off", titleField: "number", subtitleField: "short_description",
+      source: { tool: "list_incidents", args: { sysparm_query: "state=6" } },
+      actions: [
+        { label: "Close", style: "primary", tool: "update_incident", args: { sys_id: "{{sys_id}}", state: "7", work_notes: "{{comment}}" }, comment: "optional" },
+        { label: "Reopen", style: "danger", tool: "update_incident", args: { sys_id: "{{sys_id}}", state: "2", work_notes: "{{comment}}" }, comment: "required" },
+      ] } },
+  ],
+  tools: [
+    { id: "k1", name: "list_incidents", description: "", method: "GET", endpoint: "/api/now/table/incident", apiType: "table", parameters: [Q("sysparm_query"), Q("sysparm_display_value")] },
+    { id: "k2", name: "list_cis", description: "", method: "GET", endpoint: "/api/now/table/cmdb_ci", apiType: "table", parameters: [Q("sysparm_query")] },
+    { id: "k3", name: "create_incident", description: "", method: "POST", endpoint: "/api/now/table/incident", apiType: "table", parameters: [Q("short_description", true, "body"), Q("urgency", false, "body"), Q("cmdb_ci", false, "body")] },
+    { id: "k4", name: "update_incident", description: "", method: "PATCH", endpoint: "/api/now/table/incident/{sys_id}", apiType: "table", parameters: [Q("sys_id", true, "path"), Q("state", false, "body"), Q("work_notes", false, "body")] },
+    launcher("open_report", "ui://incident-kit/report", [Q("short_description", false, "body")]),
+    launcher("open_board", "ui://incident-kit/board"),
+    launcher("open_queue", "ui://incident-kit/approve"),
+  ],
+};
 writeFileSync(
   process.env["STORE_FILE"],
   JSON.stringify({
@@ -26,6 +62,7 @@ writeFileSync(
     servers: [
       { ...changeOps, id: "co", port: PORTS.service },
       { ...changeOps, id: "co-user", name: "change-ops-user", port: PORTS.user, identity: "per-user" },
+      kitServer,
     ],
   })
 );
@@ -55,6 +92,11 @@ const ap = sn.insert("sysapproval_approver", { approver: alice.sys_id, sysapprov
 const manager = new MCPManager({ instanceUrl: sn.url, username: "admin", password: "admin" });
 await manager.start({ ...changeOps, id: "co", port: PORTS.service });
 await manager.start({ ...changeOps, id: "co-user", name: "change-ops-user", port: PORTS.user, identity: "per-user" });
+await manager.start(kitServer as any);
+for (const [p, d] of [["1", "1 - Critical"], ["2", "2 - High"], ["2", "2 - High"], ["4", "4 - Low"]]) {
+  sn.insert("incident", { number: `INC00${sn.tables["incident"]?.length ?? 0}`, priority: p, priority__display: d, active: "true", state: "2" });
+}
+const resolved = sn.insert("incident", { number: "INC0099", short_description: "Mail queue stuck", priority: "3", active: "true", state: "6" });
 
 async function mcp(port: number, headers?: Record<string, string>) {
   const c = new Client({ name: "e2e-host", version: "1" }, { capabilities: { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } } as any });
@@ -172,6 +214,48 @@ try {
   await s.frame.locator(".banner.warn").waitFor();
   check(true, "service account shows decisions-disabled banner");
   await s.page.close();
+
+  // ── App Kit: no-code form / view / approval cards ──
+  const kit = await mcp(PORTS.kit);
+  const listed = (await kit.listTools()).tools.map((t: any) => t.name);
+  check(["open_report", "open_board", "open_queue"].every((n) => listed.includes(n)), "kit launchers listed");
+  const f = await openApp(kit, "ui://incident-kit/report", "open_report", { short_description: "Printer on fire" });
+  await f.frame.locator("#f_short_description").waitFor();
+  check((await f.frame.locator("#f_short_description").inputValue()) === "Printer on fire", "kit form prefilled from tool input");
+  check((await f.frame.locator("#f_urgency").inputValue()) === "3", "kit form default applied");
+  await f.frame.locator("#f_urgency").selectOption("1");
+  await f.frame.locator("#f_cmdb_ci").fill("db-prod");
+  await f.frame.locator(".typeahead .menu div", { hasText: "db-prod-01" }).click();
+  await f.frame.locator("button[type=submit]").click();
+  await f.frame.locator(".shell-dialog").waitFor();
+  if (shots) await f.page.screenshot({ path: join(shots, "kit-form-confirm.png") });
+  await f.frame.locator(".shell-dialog button.primary").click();
+  await f.frame.locator(".card h1").waitFor();
+  const inc = sn.tables["incident"]!.find((r) => r["short_description"] === "Printer on fire");
+  check(!!inc && inc["urgency"] === "1" && inc["cmdb_ci"] === sn.tables["cmdb_ci"]![0]!["sys_id"], "kit form created the incident with the CI sys_id");
+  check((await f.frame.locator(".card h1").textContent())!.includes(inc?.["number"] ?? "??"), "kit form shows the result title");
+  if (shots) await f.page.screenshot({ path: join(shots, "kit-form-done.png") });
+  await f.page.close();
+
+  const v = await openApp(kit, "ui://incident-kit/board", "open_board", {});
+  await v.frame.locator(".bar-row").first().waitFor();
+  const labels = await v.frame.locator(".bar-label").allTextContents();
+  check(labels[0] === "2 - High" && labels.length >= 3, "kit view counts by display value");
+  if (shots) await v.page.screenshot({ path: join(shots, "kit-view.png") });
+  await v.page.close();
+
+  const q = await openApp(kit, "ui://incident-kit/approve", "open_queue", {}, "dark");
+  await q.frame.locator(".appr").first().waitFor();
+  check((await q.frame.locator(".appr").count()) === 1, "kit approval cards loaded from source");
+  await q.frame.locator(".appr button.danger").click();
+  check(await q.frame.locator(".appr .banner.error").isVisible(), "kit approval requires a comment to reopen");
+  await q.frame.locator(".appr textarea").fill("Confirmed fixed with the user");
+  await q.frame.locator(".appr button.primary").click();
+  await q.frame.locator(".shell-dialog button.primary").click();
+  await q.frame.locator(".appr .banner.ok").waitFor();
+  check(sn.find("incident", resolved.sys_id)!["state"] === "7" && sn.find("incident", resolved.sys_id)!["work_notes"] === "Confirmed fixed with the user", "kit approval action sent templated args");
+  if (shots) await q.page.screenshot({ path: join(shots, "kit-approval.png") });
+  await q.page.close();
 } finally {
   await browser.close();
   await manager.stopAll();

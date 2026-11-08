@@ -254,7 +254,7 @@
             },
             {
               "name": "std_change_template",
-              "description": "Standard change template version sys_id (standard changes only)",
+              "description": "Standard change template (std_change_record_producer) sys_id, standard changes only",
               "type": "string",
               "required": false,
               "in": "body"
@@ -455,7 +455,7 @@
             },
             {
               "name": "std_change_template",
-              "description": "std_change_template",
+              "description": "Standard change template (std_change_record_producer) sys_id, standard changes only",
               "type": "string",
               "required": false,
               "in": "body"
@@ -594,6 +594,31 @@
           "kind": "handler",
           "handler": "change.request_approval",
           "id": "a6212999-7512-4807-a669-98ac24788169",
+          "ui": {
+            "resourceUri": "ui://change-ops/change-create",
+            "visibility": [
+              "app"
+            ]
+          }
+        },
+        {
+          "name": "change_approval_status",
+          "description": "Approvals generated for one change and which ones the caller can act on.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "change_sys_id",
+              "description": "change_request sys_id",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "approvals.for_change",
+          "id": "a68c21fe-c1c2-4eaf-80a8-202accd9a1f4",
           "ui": {
             "resourceUri": "ui://change-ops/change-create",
             "visibility": [

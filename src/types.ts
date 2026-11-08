@@ -1,3 +1,5 @@
+import type { AppSpec } from "./app-spec-types.js";
+
 export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 export type ParamType = "string" | "number" | "boolean";
 export type ApiType = "table" | "scripted";
@@ -47,11 +49,20 @@ export interface UIAppCsp {
   resourceDomains?: string[];
 }
 
+// Where an app's HTML comes from:
+// - "bundle": a Vite-built app under apps/ (code apps such as change-create)
+// - "spec":   a JSON spec (form / view / approval) rendered by the App Kit; no build step
+// - "html":   one uploaded self-contained HTML file, with the App Kit's window.gw injected
+export type UIAppSource = "bundle" | "spec" | "html";
+
 export interface UIApp {
   uri: string; // ui://change-ops/change-create
   name: string;
   description?: string;
-  bundle: string; // apps/change-create/dist/index.html (relative to the project root)
+  source?: UIAppSource; // default "bundle"
+  bundle?: string; // source "bundle": apps/change-create/dist/index.html (relative to the project root)
+  spec?: AppSpec; // source "spec"
+  file?: string; // source "html": <serverId>/<slug>.html under the apps data dir
   csp?: UIAppCsp;
 }
 

@@ -117,3 +117,20 @@ describe("approvals.detail", () => {
     expect(r.structured!["error"]).toBe("not_yours");
   });
 });
+
+describe("approvals.for_change", () => {
+  it("lists a change's approvals and marks the caller's", async () => {
+    const r = await approvalHandlers["approvals.for_change"]!.fn({ change_sys_id: chg2.sys_id }, user("alice"));
+    const rows = r.structured!["approvals"] as any[];
+    expect(rows.map((x) => [x.approval_sys_id, x.mine])).toEqual([
+      [apB.sys_id, false],
+      [apC.sys_id, true],
+    ]);
+    expect(r.structured).toMatchObject({ change: { number: "CHG0040013" }, decisions_enabled: true });
+  });
+
+  it("reports decisions disabled on the service account", async () => {
+    const r = await approvalHandlers["approvals.for_change"]!.fn({ change_sys_id: chg1.sys_id }, ctxFor(sn));
+    expect(r.structured!["decisions_enabled"]).toBe(false);
+  });
+});
