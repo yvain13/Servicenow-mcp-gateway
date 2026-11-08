@@ -8,6 +8,9 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 // STORE_FILE overrides the location (used by tests).
 const DATA_FILE = process.env["STORE_FILE"] ?? join(__dir, "../data/store.json");
 
+// Uploaded HTML apps live next to the store: <store dir>/apps/<serverId>/<slug>.html
+export const APPS_DATA_DIR = join(dirname(DATA_FILE), "apps");
+
 const EMPTY: Store = { instance: null, servers: [] };
 
 function read(): Store {

@@ -1,9 +1,14 @@
 import { Router } from "express";
 import * as storage from "./storage.js";
 import { testConnection } from "./servicenow.js";
-import { bundleStatus } from "./apps.js";
+import { mkdir, rm, writeFile, readFile } from "fs/promises";
+import { dirname, join } from "path";
+import { bundleStatus, readBundle, renderDraftHtml } from "./apps.js";
+import { buildPrompt, templates, validateHtml, validateSpec, type ValidationReport } from "./app-spec.js";
+import { previewCall } from "./preview.js";
 import { handlerNames } from "./handlers/index.js";
-import type { IdentityMode, Tool, ToolUI } from "./types.js";
+import type { IdentityMode, MCPServer, Parameter, Tool, ToolUI, UIApp } from "./types.js";
+import type { AppSpec } from "./app-spec-types.js";
 import type { MCPManager } from "./mcp-manager.js";
 import type { SNCredentials } from "./servicenow.js";
 
@@ -126,11 +131,125 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     const apps = await Promise.all(
       (server.apps ?? []).map(async (a) => ({
         ...a,
+        slug: slugOf(a),
+        editable: isKitApp(a),
         status: await bundleStatus(a),
         tools: server.tools.filter((t) => t.ui?.resourceUri === a.uri).map((t) => t.name),
       }))
     );
     res.json({ appsEnabled: server.appsEnabled === true, identity: server.identity ?? "service", apps });
+  });
+
+  // ── No-code apps (App Kit): JSON spec or one uploaded HTML file ──────────────
+
+  r.get("/app-kit/templates", (_req, res) => {
+    res.json(templates());
+  });
+
+  r.post("/servers/:id/apps/validate", (req, res) => {
+    const server = storage.getServer(req.params["id"]!);
+    if (!server) { res.status(404).json({ error: "Not found" }); return; }
+    res.json(validateDraft(server, req.body ?? {}));
+  });
+
+  r.post("/servers/:id/apps/prompt", (req, res) => {
+    const server = storage.getServer(req.params["id"]!);
+    if (!server) { res.status(404).json({ error: "Not found" }); return; }
+    const { format, goal } = (req.body ?? {}) as { format?: string; goal?: string };
+    if (!["form", "view", "approval", "html"].includes(format ?? "")) {
+      res.status(400).json({ error: "format must be form, view, approval or html" });
+      return;
+    }
+    res.json({ prompt: buildPrompt(server, format as "form", String(goal ?? "")) });
+  });
+
+  // Renders a draft (not yet saved) the way the host would receive it, for the preview.
+  r.post("/servers/:id/apps/render", async (req, res) => {
+    const server = storage.getServer(req.params["id"]!);
+    if (!server) { res.status(404).json({ error: "Not found" }); return; }
+    const { source, spec, html, name } = (req.body ?? {}) as Draft;
+    if (source === "spec") {
+      res.type("html").send(await readBundle({ uri: "ui://preview/draft", name: name || "Preview", source: "spec", spec }));
+    } else if (source === "html") {
+      res.type("html").send(await renderDraftHtml(String(html ?? "")));
+    } else {
+      const app = (server.apps ?? []).find((a) => slugOf(a) === req.body?.slug);
+      if (!app) { res.status(400).json({ error: "source must be spec or html, or pass the slug of a saved app" }); return; }
+      res.type("html").send(await readBundle(app));
+    }
+  });
+
+  // Tool calls from the preview: reads run live, writes are dry-run.
+  r.post("/servers/:id/apps/preview-call", async (req, res) => {
+    const server = storage.getServer(req.params["id"]!);
+    if (!server) { res.status(404).json({ error: "Not found" }); return; }
+    const { name, arguments: args } = (req.body ?? {}) as { name?: string; arguments?: Record<string, unknown> };
+    res.json(await previewCall(server, String(name ?? ""), args ?? {}, getCreds));
+  });
+
+  r.get("/servers/:id/apps/:slug/source", async (req, res) => {
+    const server = storage.getServer(req.params["id"]!);
+    const app = server?.apps?.find((a) => slugOf(a) === req.params["slug"]);
+    if (!server || !app) { res.status(404).json({ error: "Not found" }); return; }
+    if (app.spec) { res.json({ source: "spec", spec: app.spec }); return; }
+    if (app.file) {
+      const html = await readFile(join(storage.APPS_DATA_DIR, app.file), "utf8").catch(() => "");
+      res.json({ source: "html", html });
+      return;
+    }
+    res.json({ source: "bundle", bundle: app.bundle });
+  });
+
+  r.post("/servers/:id/apps", async (req, res) => {
+    const server = storage.getServer(req.params["id"]!);
+    if (!server) { res.status(404).json({ error: "Not found" }); return; }
+    const draft = (req.body ?? {}) as Draft;
+    const name = String(draft.name ?? "").trim();
+    if (!name) { res.status(400).json({ error: "name is required" }); return; }
+    const report = validateDraft(server, draft);
+    if (!report.ok) { res.status(400).json({ error: "The app has errors", report }); return; }
+
+    const slug = uniqueSlug(server, slugify(draft.slug || name));
+    const app: UIApp = { uri: `ui://${slugify(server.name)}/${slug}`, name, description: String(draft.description ?? ""), source: draft.source };
+    if (draft.source === "spec") app.spec = draft.spec;
+    else app.file = await saveHtml(server, slug, String(draft.html));
+
+    storage.updateServer(server.id, { apps: [...(server.apps ?? []), app], appsEnabled: true });
+    let launcher: Tool | undefined;
+    if (draft.launcher !== false) {
+      launcher = storage.addTool(server.id, launcherTool(server, app, draft));
+    }
+    res.status(201).json({ app: { ...app, slug }, launcher, report });
+  });
+
+  r.put("/servers/:id/apps/:slug", async (req, res) => {
+    const server = storage.getServer(req.params["id"]!);
+    const app = server?.apps?.find((a) => slugOf(a) === req.params["slug"]);
+    if (!server || !app) { res.status(404).json({ error: "Not found" }); return; }
+    if (!isKitApp(app)) { res.status(400).json({ error: "Code apps are edited under apps/ and rebuilt" }); return; }
+    const draft = { source: app.spec ? "spec" : "html", ...(req.body ?? {}) } as Draft;
+    const report = validateDraft(server, draft);
+    if (!report.ok) { res.status(400).json({ error: "The app has errors", report }); return; }
+    const next: UIApp = { ...app, name: String(draft.name ?? app.name), description: String(draft.description ?? app.description ?? "") };
+    if (draft.source === "spec") { next.spec = draft.spec; next.source = "spec"; delete next.file; }
+    else { next.file = await saveHtml(server, slugOf(app), String(draft.html)); next.source = "html"; delete next.spec; }
+    storage.updateServer(server.id, { apps: (server.apps ?? []).map((a) => (a.uri === app.uri ? next : a)) });
+    res.json({ app: { ...next, slug: slugOf(next) }, report });
+  });
+
+  r.delete("/servers/:id/apps/:slug", async (req, res) => {
+    const server = storage.getServer(req.params["id"]!);
+    const app = server?.apps?.find((a) => slugOf(a) === req.params["slug"]);
+    if (!server || !app) { res.status(404).json({ error: "Not found" }); return; }
+    if (!isKitApp(app)) { res.status(400).json({ error: "Code apps are removed from data/store.json and apps/" }); return; }
+    storage.updateServer(server.id, { apps: (server.apps ?? []).filter((a) => a.uri !== app.uri) });
+    // Launchers made for this app go with it; other tools just lose the link.
+    for (const t of server.tools.filter((t) => t.ui?.resourceUri === app.uri)) {
+      if (t.kind === "handler" && t.handler === "app.open") storage.deleteTool(server.id, t.id);
+      else storage.updateTool(server.id, t.id, { ui: t.ui?.visibility ? { visibility: t.ui.visibility } : undefined });
+    }
+    if (app.file) await rm(join(storage.APPS_DATA_DIR, app.file), { force: true });
+    res.json({ ok: true });
   });
 
   r.get("/handlers", (_req, res) => {
@@ -279,4 +398,81 @@ function validateUI(apps: { uri: string }[], ui: unknown): string | null {
     }
   }
   return null;
+}
+
+// ── App Kit helpers ───────────────────────────────────────────────────────────
+
+interface Draft {
+  name?: string;
+  slug?: string;
+  description?: string;
+  source?: "spec" | "html";
+  spec?: AppSpec;
+  html?: string;
+  launcher?: boolean;
+}
+
+function validateDraft(server: MCPServer, draft: Draft): ValidationReport {
+  if (draft.source === "spec") return validateSpec(draft.spec, server);
+  if (draft.source === "html") return validateHtml(draft.html, server);
+  return { ok: false, errors: ["source must be spec or html"], warnings: [], tools: [] };
+}
+
+function isKitApp(a: UIApp): boolean {
+  return a.source === "spec" || a.source === "html" || !!a.spec || !!a.file;
+}
+
+function slugOf(a: UIApp): string {
+  return a.uri.split("/").pop() ?? a.uri;
+}
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "app";
+}
+
+function uniqueSlug(server: MCPServer, base: string): string {
+  const taken = new Set((server.apps ?? []).map(slugOf));
+  let slug = base;
+  for (let i = 2; taken.has(slug); i++) slug = `${base}-${i}`;
+  return slug;
+}
+
+async function saveHtml(server: MCPServer, slug: string, html: string): Promise<string> {
+  const file = `${server.id}/${slug}.html`;
+  const path = join(storage.APPS_DATA_DIR, file);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, html);
+  return file;
+}
+
+// open_<slug>: the tool the model calls to show the app. A form's fields become optional
+// arguments, so the model can prefill what it already knows.
+function launcherTool(server: MCPServer, app: UIApp, draft: Draft): Omit<Tool, "id"> {
+  let toolName = `open_${slugOf(app).replace(/-/g, "_")}`;
+  for (let i = 2; server.tools.some((t) => t.name === toolName); i++) toolName = `open_${slugOf(app).replace(/-/g, "_")}_${i}`;
+  const params: Parameter[] =
+    draft.spec?.type === "form"
+      ? draft.spec.fields.map((f) => ({
+          name: f.name,
+          description: f.label ?? f.name,
+          type: f.type === "number" ? "number" : f.type === "checkbox" ? "boolean" : "string",
+          required: false,
+          in: "body",
+        }))
+      : [];
+  const what = draft.spec?.type === "form" ? "form" : draft.spec?.type === "approval" ? "approval cards" : draft.spec?.type === "view" ? "view" : "app";
+  return {
+    name: toolName,
+    description:
+      `Open the "${app.name}" ${what} for the user.` +
+      (app.description ? ` ${app.description}` : "") +
+      (params.length ? " Prefill any fields you can infer from the conversation; all are optional, and the user reviews and submits." : ""),
+    method: "POST",
+    endpoint: "",
+    apiType: "scripted",
+    parameters: params,
+    kind: "handler",
+    handler: "app.open",
+    ui: { resourceUri: app.uri, visibility: ["model", "app"] },
+  };
 }

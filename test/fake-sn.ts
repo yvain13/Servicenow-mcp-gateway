@@ -1,4 +1,4 @@
-// Minimal in-memory ServiceNow for tests: Table API (list/get/patch with a subset of
+// Minimal in-memory ServiceNow for tests: Table API (list/get/insert/patch with a subset of
 // encoded-query operators) and the Change Management API create/patch endpoints.
 import express from "express";
 import type { Server } from "http";
@@ -88,6 +88,11 @@ export class FakeSN {
       if (!r) return res.status(404).json({ error: { message: "No Record found" } });
       Object.assign(r, req.body, { sys_updated_by: (req as any).user });
       res.json({ result: r });
+    });
+    let incSeq = 10000;
+    app.post("/api/now/table/:table", (req, res) => {
+      const r = this.insert(req.params.table, { ...req.body, number: `${req.params.table.slice(0, 3).toUpperCase()}00${++incSeq}`, state: "1", sys_created_by: (req as any).user });
+      res.status(201).json({ result: r });
     });
     let seq = 40000;
     const createChange = (type: string, body: Row, extra: Row = {}) => {
