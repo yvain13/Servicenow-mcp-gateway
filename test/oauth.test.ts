@@ -109,14 +109,51 @@ async function mcp(token?: string): Promise<Client> {
 }
 
 describe("OAuth sign-in", () => {
-  it("advertises MCP authorization and answers 401 without a token", async () => {
-    const res = await fetch(`${base}/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }) });
+  it("lets clients connect and list tools without a token, and asks for sign-in on a tool call", async () => {
+    const c = await mcp(); // no token: no browser pops up when Claude starts
+    expect((await c.listTools()).tools.map((t) => t.name)).toEqual(["get_change"]);
+    await expect(c.callTool({ name: "get_change", arguments: { number: "CHG0001" } })).rejects.toThrow(/invalid_token/);
+    await c.close();
+
+    const res = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_change", arguments: {} } }),
+    });
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toContain(`resource_metadata="${base}/.well-known/oauth-protected-resource/mcp"`);
     const prm = await fetch(`${base}/.well-known/oauth-protected-resource/mcp`).then((r) => r.json());
     expect(prm.authorization_servers).toEqual([`${base}/`]);
     const asm = await fetch(`${base}/.well-known/oauth-authorization-server`).then((r) => r.json());
     expect(asm).toMatchObject({ authorization_endpoint: `${base}/authorize`, token_endpoint: `${base}/token`, registration_endpoint: `${base}/register`, code_challenge_methods_supported: ["S256"] });
+  });
+
+  it("binds a session opened before sign-in to the user who signs in", async () => {
+    const guestHeaders: Record<string, string> = {};
+    const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+      fetch: (url, init) => {
+        const headers = new Headers(init?.headers);
+        for (const [k, v] of Object.entries(guestHeaders)) headers.set(k, v);
+        return fetch(url, { ...init, headers });
+      },
+    });
+    const c = new Client({ name: "t", version: "1" });
+    await c.connect(transport);
+    await c.listTools();
+    const tok = await signIn({ mode: "new", instanceUrl: sn.url, clientId: "sn-client", label: "Early PDI", save: "" });
+    guestHeaders["Authorization"] = `Bearer ${tok.access_token}`; // what mcp-remote does after the browser sign-in
+    const res: any = await c.callTool({ name: "get_change", arguments: { number: "CHG0001" } });
+    expect(res.structuredContent.result[0].number).toBe("CHG0001");
+    expect(sn.calls.at(-1)!.user).toBe("alice");
+    expect(oauth.listCredentials()).toHaveLength(0); // "save" unticked
+    await c.close();
+  });
+
+  it("ignores a stale token until a tool runs (e.g. after a gateway restart)", async () => {
+    const c = await mcp("stale-token-from-before-restart");
+    expect((await c.listTools()).tools).toHaveLength(1);
+    await expect(c.callTool({ name: "get_change", arguments: { number: "CHG0001" } })).rejects.toThrow(/invalid_token/);
+    await c.close();
   });
 
   it("signs in with a new credential, saves it, and calls ServiceNow as that user", async () => {
@@ -175,7 +212,7 @@ describe("OAuth sign-in", () => {
     const reuse = await fetch(`${base}/token`, { method: "POST", body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: tok.refresh_token, client_id: tok.clientId }) });
     expect(reuse.status).toBe(400); // refresh tokens rotate
 
-    const bad = await fetch(`${base}/mcp`, { method: "POST", headers: { Authorization: "Bearer nope", "Content-Type": "application/json" }, body: "{}" });
+    const bad = await fetch(`${base}/mcp`, { method: "POST", headers: { Authorization: "Bearer nope", "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_change", arguments: {} } }) });
     expect(bad.status).toBe(401);
   });
 
@@ -206,16 +243,26 @@ describe("OAuth sign-in", () => {
     const u = new URL(`${base}/authorize`);
     for (const [k, v] of Object.entries({ response_type: "code", client_id: reg.client_id, redirect_uri: CLIENT_CB, code_challenge: "y".repeat(43), code_challenge_method: "S256" })) u.searchParams.set(k, v);
     const pid = /name="pid" value="([^"]+)"/.exec(await fetch(u).then((r) => r.text()))![1]!;
-    const r = await fetch(`${base}/oauth/start`, { method: "POST", body: new URLSearchParams({ pid, mode: "new", instanceUrl: "http://evil.example.com", clientId: "x" }) });
-    expect(r.status).toBe(400);
-    expect(await r.text()).toContain("must use https");
+    const r = await fetch(`${base}/oauth/start`, { method: "POST", redirect: "manual", body: new URLSearchParams({ pid, mode: "new", instanceUrl: "http://evil.example.com", clientId: "x" }) });
+    expect(r.status).toBe(303); // errors go to a GET page, so a reload never hits the POST-only URL
+    const page = await fetch(new URL(r.headers.get("location")!, base)).then((x) => x.text());
+    expect(page).toContain("must use https");
+    expect(page).toContain(`name="pid" value="${pid}"`);
+    // A GET on the form target (reload, Back, or a referrer redirect) returns to the sign-in page.
+    const again = await fetch(`${base}/oauth/start?pid=${encodeURIComponent(pid)}`, { redirect: "manual" });
+    expect(again.status).toBe(303);
+    expect(again.headers.get("location")).toBe(`/oauth/login?pid=${encodeURIComponent(pid)}`);
+    expect(again.headers.get("referrer-policy")).toBe("no-referrer");
+    const gone = await fetch(`${base}/oauth/start`);
+    expect(gone.status).toBe(400);
+    expect(await gone.text()).toMatch(/run the tool again in Claude/);
   });
 
   it("signing out ends the session", async () => {
     const tok = await signIn({ mode: "saved", credentialId: oauth.listCredentials()[0]!.id });
     const session = oauth.broker.listSessions().at(-1)!;
     expect(oauth.broker.signOut(session.id)).toBe(true);
-    const r = await fetch(`${base}/mcp`, { method: "POST", headers: { Authorization: `Bearer ${tok.access_token}`, "Content-Type": "application/json" }, body: "{}" });
+    const r = await fetch(`${base}/mcp`, { method: "POST", headers: { Authorization: `Bearer ${tok.access_token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_change", arguments: {} } }) });
     expect(r.status).toBe(401);
   });
 

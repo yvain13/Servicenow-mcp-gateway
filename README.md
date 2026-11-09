@@ -105,7 +105,7 @@ Decisions must be recorded as the real approver, so **they are refused on a shar
 |---|---|---|
 | Service account (default) | `SN_USERNAME`/`SN_PASSWORD` from `.env` | Creation, browsing approvals |
 | Per-user login (demo) | Each client sends its own ServiceNow login as `Authorization: Basic …` on the MCP endpoint; the gateway verifies it at initialize and uses it for that session | Approval demos on a PDI only |
-| OAuth sign-in (browser) | The user signs in on ServiceNow's own login page the first time the client connects; tools run with their OAuth token | Anyone; no passwords in client config |
+| OAuth sign-in (browser) | The user signs in on ServiceNow's own login page the first time a tool runs (connecting and listing tools need no sign-in); tools run with their OAuth token | Anyone; no passwords in client config |
 
 With `mcp-remote`, pass the header like this (keep the credentials in an env var, not in the config file you share):
 
@@ -121,7 +121,7 @@ With `mcp-remote`, pass the header like this (keep the credentials in an env var
 
 With identity **OAuth sign-in**, a server follows the [MCP authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) flow, and the gateway brokers it to ServiceNow OAuth:
 
-1. The client (mcp-remote, or Claude's own connector) calls `/mcp` without a token. It gets `401` with the protected-resource metadata URL, discovers the gateway's `/authorize`, `/token` and `/register` endpoints, and registers itself.
+1. The client (mcp-remote, or Claude's own connector) connects and lists tools without a token, so opening Claude doesn't pop a browser. The first **tool call** gets `401` with the protected-resource metadata URL. The client then discovers the gateway's `/authorize`, `/token` and `/register` endpoints, registers itself, and retries the call after sign-in. The MCP session is then bound to that user.
 2. The browser opens the gateway's sign-in page. The user picks a saved credential (instance URL + client ID), edits one, or adds a new one.
 3. The gateway redirects to the instance's `/oauth_auth.do` with PKCE. The user signs in (SSO works), and ServiceNow redirects to the gateway's **one** redirect URL.
 4. The gateway exchanges the code at `/oauth_token.do`, looks up the user (`sys_user`), and hands the client its own short-lived token (1 hour, with a rotating refresh token).
@@ -136,7 +136,7 @@ With identity **OAuth sign-in**, a server follows the [MCP authorization](https:
 3. For a public client using PKCE, leave the secret empty (enable PKCE on the app if your release shows the option). A confidential client works too: save its secret with the credential.
 4. Copy the **Client ID** into a saved credential in the gateway (**OAuth sign-in → Add a credential**), or let users enter it on the sign-in page.
 
-**Tokens are kept in memory.** After a gateway restart, clients get `401` and users sign in again. **OAuth sign-in** in the sidebar lists who is signed in, with **Sign out**.
+**Tokens are kept in memory.** After a gateway restart, the next tool call gets `401` and users sign in again. **OAuth sign-in** in the sidebar lists who is signed in, with **Sign out**.
 
 **Files:** saved credentials (`data/oauth-credentials.json`, including any client secret) and registered MCP clients (`data/oauth-clients.json`) are gitignored. Registered clients are kept on disk so a client that cached its registration keeps working after a restart.
 

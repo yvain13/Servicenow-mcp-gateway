@@ -438,14 +438,45 @@ export class GatewayOAuthProvider implements OAuthServerProvider {
 
 // POST /oauth/start on the MCP server: the login page's form. Uses a saved credential, or
 // saves / edits one, then redirects to ServiceNow.
+const EXPIRED = "This sign-in request has expired or was already completed. Close this tab and run the tool again in Claude; a new sign-in page will open.";
+
 export function startRouter(b: OAuthBroker = broker): Router {
   const r = express.Router();
+  // Never leak these URLs to ServiceNow as a referrer (its login could send the browser back here).
+  r.use("/oauth", (_req, res, next) => {
+    res.set("Referrer-Policy", "no-referrer");
+    res.set("Cache-Control", "no-store");
+    next();
+  });
+
+  // The sign-in page by GET, so errors and reloads never leave the browser on a POST-only URL.
+  r.get("/oauth/login", (req: Request, res: Response) => {
+    const pid = String(req.query["pid"] ?? "");
+    const pend = b.pendingFor(pid);
+    if (!pend) {
+      res.status(400).type("html").send(messagePage("Sign-in expired", EXPIRED));
+      return;
+    }
+    const error = typeof req.query["error"] === "string" ? req.query["error"] : undefined;
+    res.status(200).type("html").send(loginPage(currentServer(pend.serverId), pid, error));
+  });
+
+  // A reload or Back on the form's target lands here: send it to the sign-in page if it is still open.
+  r.get("/oauth/start", (req: Request, res: Response) => {
+    const pid = String(req.query["pid"] ?? "");
+    if (pid && b.pendingFor(pid)) {
+      res.redirect(303, `/oauth/login?pid=${encodeURIComponent(pid)}`);
+      return;
+    }
+    res.status(400).type("html").send(messagePage("Sign-in expired", EXPIRED));
+  });
+
   r.post("/oauth/start", express.urlencoded({ extended: false }), (req: Request, res: Response) => {
     const f = req.body as Record<string, string | undefined>;
     const pid = String(f["pid"] ?? "");
     const pend = b.pendingFor(pid);
     if (!pend) {
-      res.status(400).type("html").send(messagePage("Sign-in expired", "This sign-in request has expired. Start again from your MCP client."));
+      res.status(400).type("html").send(messagePage("Sign-in expired", EXPIRED));
       return;
     }
     try {
@@ -478,7 +509,8 @@ export function startRouter(b: OAuthBroker = broker): Router {
       }
       res.redirect(302, b.upstreamUrl(pid, cred));
     } catch (e) {
-      res.status(400).type("html").send(loginPage(currentServer(pend.serverId), pid, e instanceof Error ? e.message : String(e)));
+      const msg = e instanceof Error ? e.message : String(e);
+      res.redirect(303, `/oauth/login?pid=${encodeURIComponent(pid)}&error=${encodeURIComponent(msg)}`);
     }
   });
   return r;
@@ -496,6 +528,7 @@ function currentServer(id: string): MCPServer {
 export function callbackRouter(b: OAuthBroker = broker): Router {
   const r = express.Router();
   r.get("/oauth/callback", async (req: Request, res: Response) => {
+    res.set("Referrer-Policy", "no-referrer");
     const out = await b.complete(req.query as Record<string, unknown>);
     if ("redirect" in out) res.redirect(302, out.redirect);
     else res.status(400).type("html").send(messagePage("Sign-in failed", out.error));
@@ -539,11 +572,11 @@ function loginPage(server: MCPServer, pid: string, error?: string): string {
     )
     .join("");
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in · ${esc(server.name)}</title><style>${PAGE_CSS}</style></head><body><main><div class="card">
+<meta name="referrer" content="no-referrer"><title>Sign in · ${esc(server.name)}</title><style>${PAGE_CSS}</style></head><body><main><div class="card">
 <h1>Sign in to ServiceNow</h1>
 <p class="sub">for the MCP server <b>${esc(server.name)}</b>. You'll be sent to your instance's login page; tools then run as you.</p>
 ${error ? `<div class="err">${esc(error)}</div>` : ""}
-<form method="post" action="/oauth/start" id="f">
+<form method="post" action="/oauth/start?pid=${encodeURIComponent(pid)}" id="f">
   <input type="hidden" name="pid" value="${esc(pid)}">
   <input type="hidden" name="mode" id="mode" value="${creds.length ? "saved" : "new"}">
   <div id="saved" class="${creds.length ? "" : "hidden"}">${list}
@@ -589,5 +622,5 @@ ${error ? `<div class="err">${esc(error)}</div>` : ""}
 
 export function messagePage(title: string, message: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)}</title><style>${PAGE_CSS}</style></head><body><main><div class="card"><h1>${esc(title)}</h1><p class="sub">${esc(message)}</p></div></main></body></html>`;
+<meta name="referrer" content="no-referrer"><title>${esc(title)}</title><style>${PAGE_CSS}</style></head><body><main><div class="card"><h1>${esc(title)}</h1><p class="sub">${esc(message)}</p></div></main></body></html>`;
 }

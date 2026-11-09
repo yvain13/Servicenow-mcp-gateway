@@ -366,7 +366,7 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
       notes.push("Replace <base64 of username:password> with your own ServiceNow login, base64-encoded (e.g. echo -n 'user:pass' | base64). PDI demos only.");
     } else if (identity === "oauth") {
       const creds = oauth.listCredentials();
-      notes.push("No password in the config: the browser opens for ServiceNow sign-in the first time the client connects.");
+      notes.push("No password in the config: Claude connects without signing in; the browser opens for ServiceNow sign-in the first time a tool runs.");
       notes.push(`ServiceNow's OAuth app must allow the redirect URL ${oauth.redirectUrl()}.`);
       if (!creds.length) notes.push("No OAuth credential is saved yet: add one under OAuth sign-in, or users enter instance URL and client ID on the sign-in page.");
     } else {

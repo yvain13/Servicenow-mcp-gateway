@@ -650,7 +650,7 @@ async function renderDetail(s) {
           </select></label>
           <button class="btn btn-ghost btn-sm" onclick="openOAuth()">Manage OAuth</button>`:''}
         ${s.identity==='per-user'?'<span class="demo-warn">Per-user demo mode: clients send their own ServiceNow login. PDI only, not for shared use.</span>':''}
-        ${s.identity==='oauth'?`<span class="demo-warn" style="background:var(--canopy-soft);color:var(--canopy-deep)">Users sign in through the browser on first connect; tools run as them. Tokens are kept in memory, so after a gateway restart users sign in again.</span>`:''}
+        ${s.identity==='oauth'?`<span class="demo-warn" style="background:var(--canopy-soft);color:var(--canopy-deep)">Claude connects without signing in; the browser opens for ServiceNow sign-in the first time a tool runs, and tools then run as that user. Tokens are kept in memory, so after a gateway restart users sign in again.</span>`:''}
       </div>
     </div>
 
