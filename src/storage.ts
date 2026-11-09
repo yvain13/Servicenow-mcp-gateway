@@ -9,7 +9,8 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const DATA_FILE = process.env["STORE_FILE"] ?? join(__dir, "../data/store.json");
 
 // Uploaded HTML apps live next to the store: <store dir>/apps/<serverId>/<slug>.html
-export const APPS_DATA_DIR = join(dirname(DATA_FILE), "apps");
+export const STORE_DIR = dirname(DATA_FILE);
+export const APPS_DATA_DIR = join(STORE_DIR, "apps");
 
 const EMPTY: Store = { instance: null, servers: [] };
 
@@ -60,7 +61,7 @@ export function createServer(
 
 export function updateServer(
   id: string,
-  patch: Partial<Pick<MCPServer, "description" | "appsEnabled" | "apps" | "identity">>
+  patch: Partial<Pick<MCPServer, "description" | "appsEnabled" | "apps" | "identity" | "oauthCredential">>
 ): MCPServer {
   const store = read();
   const server = store.servers.find((s) => s.id === id);

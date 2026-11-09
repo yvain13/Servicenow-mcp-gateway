@@ -84,7 +84,9 @@ export interface UIApp {
 // - "service": the gateway's shared service account from .env (default).
 // - "per-user": each MCP client sends its own ServiceNow login as an
 //   `Authorization: Basic ...` header on the MCP endpoint (demo only, PDI use).
-export type IdentityMode = "service" | "per-user";
+// - "oauth": the MCP client signs the user in through the browser (MCP authorization). The
+//   gateway brokers ServiceNow's OAuth login and calls ServiceNow with the user's token.
+export type IdentityMode = "service" | "per-user" | "oauth";
 
 export interface MCPServer {
   id: string;
@@ -95,6 +97,7 @@ export interface MCPServer {
   appsEnabled?: boolean; // serve ui:// resources and _meta.ui (default false)
   apps?: UIApp[];
   identity?: IdentityMode;
+  oauthCredential?: string; // "oauth" identity: the saved OAuth credential offered first at login
 }
 
 export interface InstanceConfig {

@@ -3,3 +3,5 @@ dist/
 .env
 .claude/settings.local.json
 data/audit.log
+data/oauth-credentials.json
+data/oauth-clients.json

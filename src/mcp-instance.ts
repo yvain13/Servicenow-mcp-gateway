@@ -22,6 +22,12 @@ import type { CallerIdentity, HandlerContext, HandlerResult } from "./handlers/i
 import { RESOURCE_MIME_TYPE, appMeta, readBundle } from "./apps.js";
 import { audit } from "./audit.js";
 import { RateLimiter } from "./rate-limit.js";
+import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
+import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
+import { GatewayOAuthProvider, broker, setServerLookup, startRouter } from "./oauth.js";
+import type { NextFunction, RequestHandler } from "express";
+
+setServerLookup((id) => storage.getServer(id));
 import type { MCPServer, Tool, ToolVisibility } from "./types.js";
 
 interface Session {
@@ -30,6 +36,7 @@ interface Session {
   caller: CallerIdentity;
   appsClient: boolean;
   limiter: RateLimiter;
+  authSession?: string; // "oauth" identity: the signed-in ServiceNow session this MCP session belongs to
 }
 
 // True when the client declared MCP Apps support at initialize
@@ -105,6 +112,7 @@ export class MCPInstance {
   private app: Express;
   private httpServer: http.Server | null = null;
   private transports: Map<string, StreamableHTTPServerTransport> = new Map();
+  private sessions: Map<string, Session> = new Map();
 
   constructor(
     private readonly config: MCPServer,
@@ -272,6 +280,21 @@ export class MCPInstance {
       };
     }
 
+    if (mode === "oauth") {
+      // requireBearerAuth already verified the token; it names the ServiceNow session.
+      const sid = req.auth?.extra?.["snSessionId"] as string | undefined;
+      const sn = sid ? broker.sessions.get(sid) : undefined;
+      if (!sn) return { error: "Sign in required." };
+      return {
+        id,
+        getCreds: () => ({ instanceUrl: sn.instanceUrl, username: sn.user.userName, password: "", accessToken: sn.access }),
+        caller: { mode: "user", username: sn.user.userName, sysId: sn.user.sysId, displayName: sn.user.name },
+        appsClient: false,
+        limiter: new RateLimiter(),
+        authSession: sn.id,
+      };
+    }
+
     const header = req.headers["authorization"];
     const m = typeof header === "string" ? /^Basic\s+(.+)$/i.exec(header) : null;
     if (!m) return { error: "This server requires per-user ServiceNow credentials (Authorization: Basic header)." };
@@ -293,6 +316,7 @@ export class MCPInstance {
   }
 
   private mountRoutes(): void {
+    this.mountOAuth();
     const handle = async (req: Request, res: Response): Promise<void> => {
       try {
         const sessionId = req.headers["mcp-session-id"] as string | undefined;
@@ -321,6 +345,7 @@ export class MCPInstance {
             return;
           }
 
+          this.sessions.set(session.id, session);
           const server = this.buildServer(session);
           const newTransport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => session.id,
@@ -336,7 +361,10 @@ export class MCPInstance {
             if (cleaningUp) return;
             cleaningUp = true;
             const sid = newTransport.sessionId;
-            if (sid) this.transports.delete(sid);
+            if (sid) {
+              this.transports.delete(sid);
+              this.sessions.delete(sid);
+            }
             server.close().catch(() => {});
           };
 
@@ -345,6 +373,12 @@ export class MCPInstance {
           return;
         }
 
+        // An OAuth MCP session stays bound to the user who opened it.
+        const existing = this.sessions.get(sessionId!);
+        if (existing?.authSession && existing.authSession !== req.auth?.extra?.["snSessionId"]) {
+          res.status(403).json({ jsonrpc: "2.0", error: { code: -32001, message: "This session belongs to another sign-in." }, id: null });
+          return;
+        }
         await transport.handleRequest(req, res, req.body);
       } catch (err) {
         console.error(`[mcp] ${this.config.name} handler error:`, err);
@@ -374,6 +408,27 @@ export class MCPInstance {
         endpoint: `http://localhost:${this.config.port}/mcp`,
       });
     });
+  }
+
+  // MCP authorization (only while the server's identity is "oauth"): discovery metadata,
+  // /authorize (login page), /token, /register and /revoke from the SDK's router, the login
+  // form's /oauth/start, and a Bearer check on /mcp that answers 401 with the metadata URL.
+  private mountOAuth(): void {
+    const port = this.config.port;
+    const provider = new GatewayOAuthProvider(() => this.current());
+    const mcpUrl = new URL(`http://localhost:${port}/mcp`);
+    const auth = mcpAuthRouter({
+      provider,
+      issuerUrl: new URL(`http://localhost:${port}`),
+      resourceServerUrl: mcpUrl,
+      resourceName: this.config.name,
+    });
+    const bearer = requireBearerAuth({ verifier: provider, resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpUrl) });
+    const whenOAuth = (h: RequestHandler): RequestHandler => (req: Request, res: Response, next: NextFunction) =>
+      this.current().identity === "oauth" ? h(req, res, next) : next();
+    this.app.use(whenOAuth(auth));
+    this.app.use(whenOAuth(startRouter()));
+    this.app.use("/mcp", whenOAuth(bearer));
   }
 
   start(): Promise<void> {
