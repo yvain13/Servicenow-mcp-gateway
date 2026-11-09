@@ -245,6 +245,29 @@ It's shorter to write, but it only runs on this gateway. For apps you want to sh
 
 All of this runs on two prebuilt scripts, which `npm run build:apps` builds once: `apps/_kit/dist/kit.js` (spec apps and `gw`) and `apps/_kit/dist/ext-apps.js` (the bundled SDK for standard apps). Code apps like the change form are still the way to go for heavier logic.
 
+#### Example: the full incident form
+
+`examples/incident-form.html` is a standard MCP App laid out like ServiceNow's incident form:
+
+- **Reference fields:** Caller, Service, Service offering, Configuration item, Assignment group and Assigned to. You type and pick a record; the form sends its sys_id.
+- **Choice fields:** Category (with Subcategory filtered by it), Channel, State, Impact and Urgency, loaded from the instance's `sys_choice`.
+- **Priority:** shown from the Impact x Urgency matrix. ServiceNow calculates the stored value.
+- **Prefill:** Claude can fill any field, passing names for the reference fields.
+
+With the gateway running, install it on the `incident-mcp` server (or name another server):
+
+```bash
+node scripts/add-incident-app.mjs incident-mcp
+```
+
+The script does three things:
+
+1. Extends `create_incident` with all the form's fields.
+2. Adds the lookup tools: `search_users`, `search_groups`, `search_services`, `search_service_offerings`, `search_cis` and `get_incident_choices`.
+3. Adds the app with an `open_incident_form` launcher.
+
+You can run it again safely; it updates in place. It goes through the management API, so it doesn't touch your local `data/store.json` edits. Restart Claude afterwards so it picks up the new tools.
+
 ### Building code apps
 
 Apps live under `apps/<name>/` (an `index.html` + TypeScript) and are built with Vite and `vite-plugin-singlefile` into one self-contained `apps/<name>/dist/index.html`. `apps/_shared/` holds the shell every app uses: host connection, theme, loading and error states, a confirm dialog, and `call(tool, args)`.
@@ -367,6 +390,7 @@ data/
 | `npm run build` | Build apps, then TypeScript compile to `dist/` |
 | `npm test` | Unit and protocol tests (vitest) |
 | `npm run test:e2e` | Drive the app bundles in headless Chromium through a minimal host (needs Playwright) |
+| `npx tsx test/e2e-incident.ts` | Install the incident form with its script and drive it in headless Chromium |
 | `npm start` | Run the compiled output |
 
 ## Notes
