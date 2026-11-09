@@ -226,6 +226,14 @@
       <span class="stat" id="connStat"></span>
     </div>
 
+    <div class="conn" onclick="openOAuth()" style="margin-top:8px">
+      <div class="row">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#5BD08C" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l3 3M14 9l2 2"/></svg></div>
+        <div>OAuth sign-in</div>
+      </div>
+      <span class="inst" id="oauthSummary">Credentials and redirect URL</span>
+    </div>
+
     <a class="yt" href="https://www.youtube.com/@AIbyTusharM" target="_blank" rel="noopener noreferrer">
       <div class="yt-row">
         <div class="yt-ic"><svg viewBox="0 0 24 24"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8zM9.6 15.6V8.4l6.3 3.6z"/></svg></div>
@@ -435,22 +443,88 @@
   </div>
 </div>
 
+<!-- OAuth Modal -->
+<div class="scrim" id="oauthModal">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-head">
+      <div><h3>OAuth sign-in</h3><p>Servers set to <b>OAuth sign-in</b> send users to ServiceNow's login page. Register the redirect URL below in your ServiceNow OAuth app.</p></div>
+      <button class="x" onclick="closeModal('oauthModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Redirect URL <span class="hint">one URL for every server; paste it into the OAuth app's Redirect URL in ServiceNow</span></label>
+        <div style="display:flex;gap:8px"><input id="oa_redirect" class="mono" readonly><button class="btn btn-ghost btn-sm" onclick="copyWithToast(v('oa_redirect'),'Redirect URL copied')">Copy</button></div>
+      </div>
+      <div class="field">
+        <label>Saved credentials <span class="hint">offered on the sign-in page; users can also add or change them there</span></label>
+        <div id="oa_creds"></div>
+      </div>
+      <div class="field" style="border:1px solid var(--line);border-radius:11px;padding:14px">
+        <label id="oa_formTitle" style="margin-bottom:10px">Add a credential</label>
+        <input type="hidden" id="oa_id">
+        <div class="two">
+          <div class="field"><label>Name</label><input id="oa_label" placeholder="My PDI"></div>
+          <div class="field"><label>Instance URL</label><input id="oa_instance" class="mono" placeholder="https://dev12345.service-now.com"></div>
+        </div>
+        <div class="two">
+          <div class="field"><label>Client ID</label><input id="oa_client" class="mono"></div>
+          <div class="field"><label>Client secret <span class="hint" id="oa_secretHint">optional; leave empty for PKCE</span></label><input id="oa_secret" type="password" class="mono" autocomplete="off"></div>
+        </div>
+        <div class="field"><label>Scope <span class="hint">optional</span></label><input id="oa_scope" class="mono" placeholder="useraccount"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-ghost btn-sm" onclick="resetOAuthForm()">Clear</button>
+          <button class="btn btn-primary btn-sm" onclick="saveOAuthCred()">Save credential</button>
+        </div>
+        <div class="err-msg" id="oa_err"></div>
+      </div>
+      <div class="field">
+        <label>Signed-in users <span class="hint">in memory; cleared when the gateway restarts</span></label>
+        <div id="oa_sessions"></div>
+      </div>
+      <div class="note" style="color:var(--ink-soft);background:var(--oat);border-color:var(--line)">
+        <div>ServiceNow setup: <b>System OAuth → Application Registry → New → Create an OAuth API endpoint for external clients</b>. Set the Redirect URL above, and copy the Client ID here. For a public client, leave the secret empty and use PKCE.</div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('oauthModal')">Close</button></div>
+  </div>
+</div>
+
 <!-- Config Snippet Modal -->
 <div class="scrim" id="snippetModal">
-  <div class="modal">
+  <div class="modal" style="max-width:680px">
     <div class="modal-head">
-      <div><h3>Config Snippet</h3><p>Paste this into your Claude Desktop or Claude Code config.</p></div>
+      <div><h3>Connect a client</h3><p>Choose how users sign in, then copy the config for <b id="snip_server"></b>.</p></div>
       <button class="x" onclick="closeModal('snippetModal')">&times;</button>
     </div>
     <div class="modal-body">
       <div class="field">
-        <label>Claude Desktop — <code>claude_desktop_config.json</code></label>
-        <textarea id="snippetText" rows="10" style="font-family:var(--mono);font-size:12px" readonly></textarea>
+        <label>Sign-in <span class="hint">saved on the server</span></label>
+        <div class="seg" id="snipIdSeg">
+          <button data-val="service" onclick="setSnippetIdentity('service')">Service account</button>
+          <button data-val="oauth" onclick="setSnippetIdentity('oauth')">OAuth sign-in</button>
+          <button data-val="per-user" onclick="setSnippetIdentity('per-user')">Per-user login (demo)</button>
+        </div>
       </div>
+      <ul id="snip_notes" style="margin:0 0 14px 18px;font-size:12.5px;color:var(--ink-soft);line-height:1.6"></ul>
+      <div class="field">
+        <label style="display:flex;align-items:center">Claude Desktop <span class="hint">claude_desktop_config.json → mcpServers</span>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="copySnippet('snippetText','Claude Desktop config copied')">Copy</button></label>
+        <textarea id="snippetText" rows="11" style="font-family:var(--mono);font-size:12px" readonly></textarea>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center">Claude Code <span class="hint">terminal command</span>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="copySnippet('snippetCode','Command copied')">Copy</button></label>
+        <textarea id="snippetCode" rows="2" style="font-family:var(--mono);font-size:12px" readonly></textarea>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center">Claude Code <span class="hint">or .mcp.json in the project</span>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="copySnippet('snippetCodeJson','.mcp.json copied')">Copy</button></label>
+        <textarea id="snippetCodeJson" rows="6" style="font-family:var(--mono);font-size:12px" readonly></textarea>
+      </div>
+      <div id="snip_oauth" style="display:none;margin-bottom:6px"><button class="btn btn-ghost btn-sm" onclick="closeModal('snippetModal');openOAuth()">Manage OAuth credentials and redirect URL</button></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('snippetModal')">Close</button>
-      <button class="btn btn-primary" onclick="copySnippet()">Copy</button>
     </div>
   </div>
 </div>
@@ -467,6 +541,7 @@ let detailTab = "tools";
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 async function boot() {
   await loadInstance();
+  await loadOAuth();
   await loadServers();
 }
 
@@ -565,9 +640,17 @@ async function renderDetail(s) {
           <select onchange="setServerFlag('${s.id}',{identity:this.value})">
             <option value="service" ${(s.identity||'service')==='service'?'selected':''}>Service account (.env)</option>
             <option value="per-user" ${s.identity==='per-user'?'selected':''}>Per-user login (demo)</option>
+            <option value="oauth" ${s.identity==='oauth'?'selected':''}>OAuth sign-in (browser)</option>
           </select>
         </label>
+        ${s.identity==='oauth'?`<label>Offer first
+          <select onchange="setServerFlag('${s.id}',{oauthCredential:this.value||null})">
+            <option value="">First saved credential</option>
+            ${oauthState.credentials.map(c=>`<option value="${esc(c.id)}" ${s.oauthCredential===c.id?'selected':''}>${esc(c.label)}</option>`).join('')}
+          </select></label>
+          <button class="btn btn-ghost btn-sm" onclick="openOAuth()">Manage OAuth</button>`:''}
         ${s.identity==='per-user'?'<span class="demo-warn">Per-user demo mode: clients send their own ServiceNow login. PDI only, not for shared use.</span>':''}
+        ${s.identity==='oauth'?`<span class="demo-warn" style="background:var(--canopy-soft);color:var(--canopy-deep)">Users sign in through the browser on first connect; tools run as them. Tokens are kept in memory, so after a gateway restart users sign in again.</span>`:''}
       </div>
     </div>
 
@@ -828,6 +911,91 @@ window.addEventListener('message', async (e) => {
   if (m.id !== undefined) reply({});
 });
 
+// ── OAuth ───────────────────────────────────────────────────────────────────
+let oauthState = { redirectUrl: '', credentials: [], sessions: [] };
+
+async function loadOAuth() {
+  const r = await api('GET', '/oauth');
+  if (r && r.redirectUrl) oauthState = r;
+  const sum = document.getElementById('oauthSummary');
+  if (sum) sum.textContent = `${oauthState.credentials.length} credential${oauthState.credentials.length===1?'':'s'} · ${oauthState.sessions.length} signed in`;
+  return oauthState;
+}
+
+async function openOAuth() {
+  await loadOAuth();
+  renderOAuth();
+  resetOAuthForm();
+  openModal('oauthModal');
+}
+
+function renderOAuth() {
+  document.getElementById('oa_redirect').value = oauthState.redirectUrl;
+  document.getElementById('oa_creds').innerHTML = oauthState.credentials.length ? oauthState.credentials.map(c => `
+    <div class="app-card" style="padding:11px 14px;margin-bottom:8px;display:flex;gap:10px;align-items:center">
+      <div style="flex:1;min-width:0"><b>${esc(c.label)}</b><div class="meta" style="margin-top:2px"><code>${esc(c.instanceUrl)}</code> · client <code>${esc(c.clientId)}</code>${c.hasSecret?' · secret saved':' · PKCE (no secret)'}${c.scope?` · scope <code>${esc(c.scope)}</code>`:''}</div></div>
+      <button class="btn btn-ghost btn-sm" onclick="editOAuthCred('${esc(c.id)}')">Edit</button>
+      <button class="btn btn-ghost btn-sm" onclick="deleteOAuthCred('${esc(c.id)}')">Delete</button>
+    </div>`).join('') : '<div class="no-tools" style="padding:14px">None yet. Add one below, or users can add one on the sign-in page.</div>';
+  document.getElementById('oa_sessions').innerHTML = oauthState.sessions.length ? oauthState.sessions.map(x => `
+    <div class="app-card" style="padding:9px 14px;margin-bottom:6px;display:flex;gap:10px;align-items:center">
+      <div style="flex:1;font-size:12.5px"><b>${esc(x.user)}</b> on <b>${esc(x.server)}</b><div class="meta" style="margin-top:0"><code>${esc(x.instanceUrl)}</code> · signed in ${esc(new Date(x.signedInAt).toLocaleString())}</div></div>
+      <button class="btn btn-ghost btn-sm" onclick="signOutOAuth('${esc(x.id)}')">Sign out</button>
+    </div>`).join('') : '<div class="no-tools" style="padding:14px">Nobody is signed in.</div>';
+}
+
+function resetOAuthForm() {
+  for (const k of ['oa_id','oa_label','oa_instance','oa_client','oa_secret','oa_scope']) clearId(k);
+  document.getElementById('oa_formTitle').textContent = 'Add a credential';
+  document.getElementById('oa_secretHint').textContent = 'optional; leave empty for PKCE';
+  showErr('oa_err', '');
+}
+
+function editOAuthCred(id) {
+  const c = oauthState.credentials.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('oa_id').value = c.id;
+  document.getElementById('oa_label').value = c.label;
+  document.getElementById('oa_instance').value = c.instanceUrl;
+  document.getElementById('oa_client').value = c.clientId;
+  document.getElementById('oa_secret').value = '';
+  document.getElementById('oa_scope').value = c.scope || '';
+  document.getElementById('oa_formTitle').textContent = `Edit "${c.label}"`;
+  document.getElementById('oa_secretHint').textContent = c.hasSecret ? 'leave empty to keep the saved secret; "-" removes it' : 'optional; leave empty for PKCE';
+}
+
+async function saveOAuthCred() {
+  const id = v('oa_id');
+  const body = { label: v('oa_label'), instanceUrl: v('oa_instance'), clientId: v('oa_client'), clientSecret: v('oa_secret'), scope: v('oa_scope') };
+  const r = id ? await api('PUT', `/oauth/credentials/${id}`, body) : await api('POST', '/oauth/credentials', body);
+  if (r.error) { showErr('oa_err', r.error); return; }
+  toast(id ? 'Credential updated' : 'Credential saved');
+  await loadOAuth(); renderOAuth(); resetOAuthForm();
+  refreshDetail();
+}
+
+async function deleteOAuthCred(id) {
+  const c = oauthState.credentials.find(x => x.id === id);
+  if (!confirm(`Delete the credential "${c ? c.label : id}"? Signed-in users stay signed in.`)) return;
+  await api('DELETE', `/oauth/credentials/${id}`);
+  await loadOAuth(); renderOAuth();
+  refreshDetail();
+}
+
+async function signOutOAuth(id) {
+  await api('DELETE', `/oauth/sessions/${id}`);
+  toast('Signed out');
+  await loadOAuth(); renderOAuth();
+}
+
+function copyWithToast(text, msg) {
+  navigator.clipboard.writeText(text).then(() => toast(msg || 'Copied')).catch(() => toast('Copy blocked: select and copy manually'));
+}
+
+async function refreshDetail() {
+  await loadServers();
+}
+
 async function setServerFlag(id, patch) {
   const r = await api('PATCH', `/servers/${id}`, patch);
   if (r.error) { toast(r.error); return; }
@@ -1060,15 +1228,37 @@ function collectParams() {
 }
 
 // ── Config Snippet ────────────────────────────────────────────────────────────
+let snippetServerId = null;
+
 async function showSnippet(serverId) {
-  const r = await api('GET', `/servers/${serverId}/config-snippet`);
-  document.getElementById('snippetText').value = r.json || '';
+  snippetServerId = serverId;
+  await renderSnippet();
   openModal('snippetModal');
 }
 
-function copySnippet() {
-  navigator.clipboard.writeText(document.getElementById('snippetText').value);
-  toast('Copied to clipboard');
+async function renderSnippet() {
+  const r = await api('GET', `/servers/${snippetServerId}/config-snippet`);
+  const srv = servers.find(x => x.id === snippetServerId);
+  document.getElementById('snip_server').textContent = srv ? srv.name : '';
+  document.querySelectorAll('#snipIdSeg button').forEach(b => b.classList.toggle('on', b.dataset.val === r.identity));
+  document.getElementById('snippetText').value = r.json || '';
+  document.getElementById('snippetCode').value = r.claudeCode || '';
+  document.getElementById('snippetCodeJson').value = r.claudeCodeJson || '';
+  document.getElementById('snip_notes').innerHTML = (r.notes || []).map(n => `<li>${esc(n)}</li>`).join('');
+  document.getElementById('snip_oauth').style.display = r.identity === 'oauth' ? 'block' : 'none';
+}
+
+// Saves the identity on the server (same as the Identity selector on the server page).
+async function setSnippetIdentity(identity) {
+  const r = await api('PATCH', `/servers/${snippetServerId}`, { identity });
+  if (r.error) { toast(r.error); return; }
+  toast(identity === 'oauth' ? 'OAuth sign-in on: users sign in through the browser' : identity === 'per-user' ? 'Per-user login on' : 'Service account on');
+  await loadServers();
+  await renderSnippet();
+}
+
+function copySnippet(id, msg) {
+  navigator.clipboard.writeText(document.getElementById(id).value).then(() => toast(msg || 'Copied')).catch(() => toast('Copy blocked: select and copy manually'));
 }
 
 // ── Port preview ──────────────────────────────────────────────────────────────

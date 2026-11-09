@@ -4,9 +4,11 @@ export interface SNCredentials {
   instanceUrl: string; // e.g. https://dev00000.service-now.com
   username: string;
   password: string;
+  accessToken?: string; // OAuth sessions: sent as Bearer instead of Basic
 }
 
 export function authHeader(creds: SNCredentials): string {
+  if (creds.accessToken) return `Bearer ${creds.accessToken}`;
   return "Basic " + Buffer.from(`${creds.username}:${creds.password}`).toString("base64");
 }
 

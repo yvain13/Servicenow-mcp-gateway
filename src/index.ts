@@ -5,6 +5,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { MCPManager } from "./mcp-manager.js";
 import { buildRouter } from "./routes.js";
+import { callbackRouter } from "./oauth.js";
 import * as storage from "./storage.js";
 import type { SNCredentials } from "./servicenow.js";
 
@@ -40,6 +41,9 @@ async function main(): Promise<void> {
 
   // Management REST API
   app.use("/api", buildRouter(manager, () => manager.getCreds()));
+
+  // The one OAuth redirect URL registered in ServiceNow (http://localhost:<port>/oauth/callback).
+  app.use(callbackRouter());
 
   // Serve the UI
   app.use(express.static(join(__dir, "../public")));

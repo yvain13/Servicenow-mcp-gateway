@@ -6,6 +6,7 @@ import { dirname, join } from "path";
 import { bundleStatus, readBundle, renderDraftHtml } from "./apps.js";
 import { buildPrompt, templates, validateHtml, validateSpec, type ValidationReport } from "./app-spec.js";
 import { previewCall } from "./preview.js";
+import * as oauth from "./oauth.js";
 import { handlerNames } from "./handlers/index.js";
 import type { IdentityMode, MCPServer, Parameter, Tool, ToolUI, UIApp, UIAppPermission, UIAppReference } from "./types.js";
 import type { AppSpec } from "./app-spec-types.js";
@@ -104,13 +105,18 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
 
   // Update server-level flags: appsEnabled, identity, description.
   r.patch("/servers/:id", (req, res) => {
-    const { appsEnabled, identity, description } = req.body as {
+    const { appsEnabled, identity, description, oauthCredential } = req.body as {
       appsEnabled?: boolean;
       identity?: IdentityMode;
       description?: string;
+      oauthCredential?: string | null;
     };
-    if (identity !== undefined && identity !== "service" && identity !== "per-user") {
-      res.status(400).json({ error: "identity must be service or per-user" });
+    if (identity !== undefined && identity !== "service" && identity !== "per-user" && identity !== "oauth") {
+      res.status(400).json({ error: "identity must be service, per-user or oauth" });
+      return;
+    }
+    if (oauthCredential && !oauth.getCredential(oauthCredential)) {
+      res.status(400).json({ error: "Unknown OAuth credential" });
       return;
     }
     try {
@@ -118,6 +124,7 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
       if (appsEnabled !== undefined) patch.appsEnabled = Boolean(appsEnabled);
       if (identity !== undefined) patch.identity = identity;
       if (description !== undefined) patch.description = String(description);
+      if (oauthCredential !== undefined) patch.oauthCredential = oauthCredential || undefined;
       res.json(storage.updateServer(req.params["id"]!, patch));
     } catch (err) {
       res.status(404).json({ error: String(err) });
@@ -265,6 +272,54 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     res.json({ ok: true });
   });
 
+  // ── OAuth (browser sign-in) ─────────────────────────────────────────────────
+
+  r.get("/oauth", (_req, res) => {
+    res.json({
+      redirectUrl: oauth.redirectUrl(),
+      credentials: oauth.listCredentials().map(oauth.publicCredential),
+      sessions: oauth.broker.listSessions().map((s) => ({
+        id: s.id,
+        server: storage.getServer(s.serverId)?.name ?? s.serverId,
+        user: s.user.name ? `${s.user.name} (${s.user.userName})` : s.user.userName,
+        instanceUrl: s.instanceUrl,
+        signedInAt: new Date(s.createdAt).toISOString(),
+        expiresAt: new Date(s.expiresAt).toISOString(),
+      })),
+    });
+  });
+
+  r.post("/oauth/credentials", (req, res) => {
+    try {
+      const { id: _ignored, ...input } = (req.body ?? {}) as Partial<oauth.OAuthCredential>;
+      res.status(201).json(oauth.publicCredential(oauth.saveCredential(input)));
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  r.put("/oauth/credentials/:id", (req, res) => {
+    if (!oauth.getCredential(req.params["id"])) { res.status(404).json({ error: "Not found" }); return; }
+    try {
+      res.json(oauth.publicCredential(oauth.saveCredential({ ...(req.body ?? {}), id: req.params["id"] })));
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  r.delete("/oauth/credentials/:id", (req, res) => {
+    const ok = oauth.deleteCredential(req.params["id"]!);
+    // Servers that preferred it fall back to the first saved credential.
+    for (const s of storage.listServers()) {
+      if (s.oauthCredential === req.params["id"]) storage.updateServer(s.id, { oauthCredential: undefined });
+    }
+    res.json({ ok });
+  });
+
+  r.delete("/oauth/sessions/:id", (req, res) => {
+    res.json({ ok: oauth.broker.signOut(req.params["id"]!) });
+  });
+
   r.get("/handlers", (_req, res) => {
     res.json(handlerNames());
   });
@@ -287,19 +342,48 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     res.json({ running: false });
   });
 
+  // Copy-ready client config for a server. ?identity= previews another mode without saving.
   r.get("/servers/:id/config-snippet", (req, res) => {
     const server = storage.getServer(req.params["id"]!);
     if (!server) { res.status(404).json({ error: "Not found" }); return; }
+    const q = String(req.query["identity"] ?? "");
+    const identity = (["service", "per-user", "oauth"].includes(q) ? q : server.identity ?? "service") as IdentityMode;
+    const url = `http://localhost:${server.port}/mcp`;
 
-    const snippet = {
-      mcpServers: {
-        [server.name]: {
-          command: "npx",
-          args: ["mcp-remote", `http://localhost:${server.port}/mcp`],
-        },
-      },
-    };
-    res.json({ snippet, json: JSON.stringify(snippet, null, 2) });
+    // Claude Desktop speaks stdio, so mcp-remote bridges to the gateway's HTTP endpoint.
+    const desktopEntry: Record<string, unknown> = { command: "npx", args: ["-y", "mcp-remote@0.16.5", url] };
+    // Claude Code speaks HTTP (and MCP OAuth) natively.
+    const codeEntry: Record<string, unknown> = { type: "http", url };
+    const cliName = /^[\w.-]+$/.test(server.name) ? server.name : `"${server.name.replace(/"/g, '\\"')}"`;
+    let claudeCode = `claude mcp add --transport http ${cliName} ${url}`;
+    const notes: string[] = [];
+
+    if (identity === "per-user") {
+      desktopEntry["args"] = [...(desktopEntry["args"] as string[]), "--header", "Authorization:${SN_BASIC_AUTH}"];
+      desktopEntry["env"] = { SN_BASIC_AUTH: "Basic <base64 of username:password>" };
+      codeEntry["headers"] = { Authorization: "Basic <base64 of username:password>" };
+      claudeCode += ` --header "Authorization: Basic <base64 of username:password>"`;
+      notes.push("Replace <base64 of username:password> with your own ServiceNow login, base64-encoded (e.g. echo -n 'user:pass' | base64). PDI demos only.");
+    } else if (identity === "oauth") {
+      const creds = oauth.listCredentials();
+      notes.push("No password in the config: the browser opens for ServiceNow sign-in the first time the client connects.");
+      notes.push(`ServiceNow's OAuth app must allow the redirect URL ${oauth.redirectUrl()}.`);
+      if (!creds.length) notes.push("No OAuth credential is saved yet: add one under OAuth sign-in, or users enter instance URL and client ID on the sign-in page.");
+    } else {
+      notes.push("Uses the gateway's service account from .env; no sign-in needed.");
+    }
+
+    const snippet = { mcpServers: { [server.name]: desktopEntry } };
+    const codeJson = { mcpServers: { [server.name]: codeEntry } };
+    res.json({
+      identity,
+      saved: (server.identity ?? "service") === identity,
+      snippet,
+      json: JSON.stringify(snippet, null, 2),
+      claudeCode,
+      claudeCodeJson: JSON.stringify(codeJson, null, 2),
+      notes,
+    });
   });
 
   // ── Tools ────────────────────────────────────────────────────────────────────

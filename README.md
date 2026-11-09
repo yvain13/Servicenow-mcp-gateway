@@ -105,6 +105,7 @@ Decisions must be recorded as the real approver, so **they are refused on a shar
 |---|---|---|
 | Service account (default) | `SN_USERNAME`/`SN_PASSWORD` from `.env` | Creation, browsing approvals |
 | Per-user login (demo) | Each client sends its own ServiceNow login as `Authorization: Basic …` on the MCP endpoint; the gateway verifies it at initialize and uses it for that session | Approval demos on a PDI only |
+| OAuth sign-in (browser) | The user signs in on ServiceNow's own login page the first time the client connects; tools run with their OAuth token | Anyone; no passwords in client config |
 
 With `mcp-remote`, pass the header like this (keep the credentials in an env var, not in the config file you share):
 
@@ -116,7 +117,34 @@ With `mcp-remote`, pass the header like this (keep the credentials in an env var
 }
 ```
 
-Per-user OAuth (ServiceNow as authorization server, the gateway forwarding each user's token) is the target for any shared deployment and is not built yet.
+### OAuth sign-in
+
+With identity **OAuth sign-in**, a server follows the [MCP authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) flow, and the gateway brokers it to ServiceNow OAuth:
+
+1. The client (mcp-remote, or Claude's own connector) calls `/mcp` without a token. It gets `401` with the protected-resource metadata URL, discovers the gateway's `/authorize`, `/token` and `/register` endpoints, and registers itself.
+2. The browser opens the gateway's sign-in page. The user picks a saved credential (instance URL + client ID), edits one, or adds a new one.
+3. The gateway redirects to the instance's `/oauth_auth.do` with PKCE. The user signs in (SSO works), and ServiceNow redirects to the gateway's **one** redirect URL.
+4. The gateway exchanges the code at `/oauth_token.do`, looks up the user (`sys_user`), and hands the client its own short-lived token (1 hour, with a rotating refresh token).
+5. Every tool call goes to ServiceNow with the user's Bearer token, refreshed shortly before it expires. Approvals, the audit log and ACLs all apply to the real user.
+
+**The redirect URL** is the management port's callback, `http://localhost:3001/oauth/callback` (it follows `MANAGEMENT_PORT`; `OAUTH_REDIRECT_URL` overrides it). It is shown, with a copy button, in **OAuth sign-in** in the sidebar and on the sign-in page. Register it once; it serves every server.
+
+**ServiceNow setup** (once per instance):
+
+1. **System OAuth → Application Registry → New → Create an OAuth API endpoint for external clients**.
+2. Set **Redirect URL** to the URL above.
+3. For a public client using PKCE, leave the secret empty (enable PKCE on the app if your release shows the option). A confidential client works too: save its secret with the credential.
+4. Copy the **Client ID** into a saved credential in the gateway (**OAuth sign-in → Add a credential**), or let users enter it on the sign-in page.
+
+**Tokens are kept in memory.** After a gateway restart, clients get `401` and users sign in again. **OAuth sign-in** in the sidebar lists who is signed in, with **Sign out**.
+
+**Files:** saved credentials (`data/oauth-credentials.json`, including any client secret) and registered MCP clients (`data/oauth-clients.json`) are gitignored. Registered clients are kept on disk so a client that cached its registration keeps working after a restart.
+
+The server page's **Config snippet** button opens **Connect a client**. Pick the sign-in mode there (Service account, OAuth sign-in or Per-user login; it's saved on the server) and copy the matching Claude Desktop config, Claude Code command or `.mcp.json`. In Claude Desktop, an OAuth server needs no header or password:
+
+```json
+"change-ops": { "command": "npx", "args": ["-y", "mcp-remote@0.16.5", "http://localhost:7820/mcp"] }
+```
 
 ### Governance
 
@@ -283,6 +311,7 @@ Run `claude mcp list` to verify, or `/mcp` inside an interactive session for liv
 |---|---|---|
 | `MANAGEMENT_PORT` | no (default `3001`) | Port for the management UI / REST API |
 | `MANAGEMENT_HOST` | no (default `127.0.0.1`) | Bind address for the management UI |
+| `OAUTH_REDIRECT_URL` | no (default `http://localhost:<MANAGEMENT_PORT>/oauth/callback`) | The one redirect URL registered in ServiceNow for OAuth sign-in |
 | `MCP_HOST` | no (default all interfaces) | Bind address for the MCP server ports |
 | `MCP_APPS_ASSUME_SUPPORT` | no | `1` treats every client as MCP Apps-capable |
 | `WRITE_RATE_LIMIT` | no (default `30`) | Write tool calls per session per minute |
@@ -309,6 +338,7 @@ src/
   app-spec-types.ts # the form / view / approval spec format
   preview.ts        # tool calls from the builder preview (reads live, writes dry-run)
   audit.ts, rate-limit.ts, idempotency.ts
+  oauth.ts          # OAuth sign-in: saved credentials, login page, broker to ServiceNow OAuth
   storage.ts        # JSON file persistence
   types.ts          # shared types
 apps/

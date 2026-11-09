@@ -315,6 +315,20 @@ describe("app routes", () => {
     await call("DELETE", "/servers/s1/apps/incident-table");
   });
 
+  it("config snippet matches the sign-in mode", async () => {
+    const svc = (await call("GET", "/servers/s1/config-snippet")).body;
+    expect(svc.identity).toBe("service");
+    expect(svc.snippet.mcpServers["Incident Ops"]).toEqual({ command: "npx", args: ["-y", "mcp-remote@0.16.5", "http://localhost:47860/mcp"] });
+    expect(svc.claudeCode).toBe('claude mcp add --transport http "Incident Ops" http://localhost:47860/mcp');
+    const oa = (await call("GET", "/servers/s1/config-snippet?identity=oauth")).body;
+    expect(oa.saved).toBe(false);
+    expect(oa.snippet.mcpServers["Incident Ops"].args).not.toContain("--header");
+    expect(oa.notes.join(" ")).toMatch(/redirect URL http:\/\/localhost:\d+\/oauth\/callback/);
+    const pu = (await call("GET", "/servers/s1/config-snippet?identity=per-user")).body;
+    expect(pu.snippet.mcpServers["Incident Ops"].args).toContain("--header");
+    expect(JSON.parse(pu.claudeCodeJson).mcpServers["Incident Ops"].headers.Authorization).toMatch(/^Basic /);
+  });
+
   it("preview calls dry-run writes", async () => {
     const r = await call("POST", "/servers/s1/apps/preview-call", { name: "create_incident", arguments: { short_description: "x" } });
     expect(r.body.structuredContent).toMatchObject({ preview: true, tool: "create_incident" });

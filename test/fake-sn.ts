@@ -2,7 +2,7 @@
 // encoded-query operators) and the Change Management API create/patch endpoints.
 import express from "express";
 import type { Server } from "http";
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 export type Row = Record<string, any>;
 
@@ -32,6 +32,13 @@ export class FakeSN {
   tables: Record<string, Row[]> = {};
   calls: { method: string; path: string; query: Record<string, any>; body?: any; user: string }[] = [];
   users: Record<string, string> = { admin: "admin" }; // username → password
+  // OAuth: registered apps, who "signs in" at /oauth_auth.do, and issued tokens.
+  oauthApps: Record<string, { redirectUri: string; secret?: string }> = {};
+  oauthLoginAs = "admin";
+  tokenTtl = 1800;
+  bearer: Record<string, { user: string; expires: number }> = {};
+  private oauthCodes: Record<string, { user: string; clientId: string; redirectUri: string; challenge?: string }> = {};
+  private refreshTokens: Record<string, { user: string; clientId: string }> = {};
   private server: Server | null = null;
   url = "";
 
@@ -60,8 +67,53 @@ export class FakeSN {
   async start(): Promise<void> {
     const app = express();
     app.use(express.json());
+    app.use(express.urlencoded({ extended: false }));
+    // OAuth authorization code + PKCE, like ServiceNow's /oauth_auth.do and /oauth_token.do.
+    app.get("/oauth_auth.do", (req, res) => {
+      const q = req.query as Record<string, string>;
+      const reg = this.oauthApps[q["client_id"] ?? ""];
+      if (!reg) return res.status(400).send("invalid client_id");
+      if (q["redirect_uri"] !== reg.redirectUri) return res.status(400).send("redirect_uri mismatch");
+      const code = randomBytes(12).toString("hex");
+      this.oauthCodes[code] = { user: this.oauthLoginAs, clientId: q["client_id"]!, redirectUri: q["redirect_uri"]!, challenge: q["code_challenge"] };
+      const back = new URL(q["redirect_uri"]!);
+      back.searchParams.set("code", code);
+      if (q["state"]) back.searchParams.set("state", q["state"]);
+      res.redirect(302, back.href);
+    });
+    app.post("/oauth_token.do", (req, res) => {
+      const b = req.body as Record<string, string>;
+      const reg = this.oauthApps[b["client_id"] ?? ""];
+      if (!reg || (reg.secret && reg.secret !== b["client_secret"])) return res.status(401).json({ error: "invalid_client" });
+      let user: string;
+      if (b["grant_type"] === "authorization_code") {
+        const c = this.oauthCodes[b["code"] ?? ""];
+        delete this.oauthCodes[b["code"] ?? ""];
+        if (!c || c.clientId !== b["client_id"] || c.redirectUri !== b["redirect_uri"]) return res.status(400).json({ error: "invalid_grant" });
+        const hash = createHash("sha256").update(b["code_verifier"] ?? "").digest("base64url");
+        if (c.challenge && c.challenge !== hash) return res.status(400).json({ error: "invalid_grant", error_description: "PKCE" });
+        user = c.user;
+      } else if (b["grant_type"] === "refresh_token") {
+        const r = this.refreshTokens[b["refresh_token"] ?? ""];
+        if (!r || r.clientId !== b["client_id"]) return res.status(400).json({ error: "invalid_grant" });
+        user = r.user;
+      } else return res.status(400).json({ error: "unsupported_grant_type" });
+      const access = randomBytes(16).toString("hex");
+      const refresh = randomBytes(16).toString("hex");
+      this.bearer[access] = { user, expires: Date.now() + this.tokenTtl * 1000 };
+      this.refreshTokens[refresh] = { user, clientId: b["client_id"]! };
+      res.json({ access_token: access, refresh_token: refresh, token_type: "Bearer", expires_in: this.tokenTtl, scope: "useraccount" });
+    });
     app.use((req, res, next) => {
-      const auth = Buffer.from(String(req.headers.authorization ?? "").replace(/^Basic /, ""), "base64").toString();
+      const header = String(req.headers.authorization ?? "");
+      if (header.startsWith("Bearer ")) {
+        const t = this.bearer[header.slice(7)];
+        if (!t || t.expires < Date.now()) return res.status(401).json({ error: { message: "User Not Authenticated" } });
+        (req as any).user = t.user;
+        this.calls.push({ method: req.method, path: req.path, query: req.query, body: req.body, user: t.user });
+        return next();
+      }
+      const auth = Buffer.from(header.replace(/^Basic /, ""), "base64").toString();
       const [u, p] = [auth.slice(0, auth.indexOf(":")), auth.slice(auth.indexOf(":") + 1)];
       if (this.users[u] !== p) return res.status(401).json({ error: { message: "User Not Authenticated" } });
       (req as any).user = u;
@@ -69,7 +121,11 @@ export class FakeSN {
       next();
     });
     app.get("/api/now/table/:table", (req, res) => {
-      const q = String(req.query["sysparm_query"] ?? "");
+      let q = String(req.query["sysparm_query"] ?? "");
+      if (q.includes("javascript:gs.getUserID()")) {
+        const me = (this.tables["sys_user"] ?? []).find((u) => u["user_name"] === (req as any).user);
+        q = q.replace("javascript:gs.getUserID()", me?.["sys_id"] ?? "none");
+      }
       const rows = (this.tables[req.params.table] ?? []).filter((r) => matches(r, q));
       const limit = Number(req.query["sysparm_limit"] ?? 10000);
       res.json({
