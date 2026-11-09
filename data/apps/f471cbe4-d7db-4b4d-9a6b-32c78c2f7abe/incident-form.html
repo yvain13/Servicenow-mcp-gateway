@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<!--
+  Incident form: a standard MCP App (official SDK only, no gateway-specific code), laid out
+  like ServiceNow's incident form. The same file works on this gateway and on ServiceNow's
+  MCP Server Console.
+
+  Tools it calls (scripts/add-incident-app.mjs adds them to a server):
+    create_incident             Table API POST /incident with all the fields below
+    get_incident_choices        sys_choice rows for the choice fields (falls back to the out-of-box values)
+    search_users                Caller, Assigned to         (sys_user)
+    search_groups               Assignment group            (sys_user_group)
+    search_services             Service                     (cmdb_ci_service)
+    search_service_offerings    Service offering            (service_offering)
+    search_cis                  Configuration item          (cmdb_ci)
+
+  Reference fields hold sys_ids; the user picks a record by name. Priority is shown from the
+  standard Impact x Urgency matrix; ServiceNow calculates the real value on save.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Incident form</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+      background: var(--color-background-primary, #ffffff);
+      color: var(--color-text-primary, #16181d);
+      margin: 0; padding: 14px 16px; font-size: 13px; line-height: 1.4;
+    }
+    h1 { font-size: 16px; margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+    @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
+    .row { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .row.wide { grid-column: 1 / -1; }
+    .row.wide.top { align-items: start; }
+    .row.wide.top label { padding-top: 7px; }
+    label { text-align: right; color: var(--color-text-secondary, #3d4250); }
+    label .req { color: #c8102e; margin-right: 3px; }
+    input, select, textarea {
+      width: 100%; font: inherit; color: inherit; background: var(--color-background-primary, #fff);
+      border: 1px solid #8887; border-radius: 6px; padding: 6px 8px; min-height: 32px;
+    }
+    textarea { resize: vertical; }
+    input[readonly] { background: #8881; }
+    .ref { position: relative; display: flex; }
+    .ref input { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+    .ref button { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; padding: 0 9px; }
+    .ref.picked input { font-weight: 600; }
+    .menu {
+      position: absolute; top: 100%; left: 0; right: 0; z-index: 5; margin-top: 2px; max-height: 220px; overflow: auto;
+      background: var(--color-background-primary, #fff); border: 1px solid #8887; border-radius: 6px; box-shadow: 0 6px 18px #0002;
+    }
+    .menu div { padding: 6px 9px; cursor: pointer; }
+    .menu div:hover, .menu div.active { background: #2563eb22; }
+    .menu small { color: var(--color-text-secondary, #6b7280); margin-left: 6px; }
+    .menu .empty { color: var(--color-text-secondary, #6b7280); cursor: default; }
+    button { font: inherit; border-radius: 6px; padding: 6px 14px; border: 1px solid #8887; background: transparent; color: inherit; cursor: pointer; }
+    button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    button:disabled { opacity: .5; cursor: default; }
+    .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+    .banner { padding: 8px 10px; border-radius: 6px; margin: 0 0 10px; }
+    .banner.ok { background: #16a34a22; color: #15803d; }
+    .banner.error { background: #dc262622; color: #b91c1c; }
+    .confirm { border: 1px solid #8887; border-radius: 8px; padding: 12px; margin-top: 12px; }
+    .confirm dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 8px 0; }
+    .confirm dt { color: var(--color-text-secondary, #5b6170); }
+    .confirm dd { margin: 0; }
+    .hint { font-size: 11px; color: var(--color-text-secondary, #6b7280); }
+  </style>
+</head>
+<body>
+  <h1>Create incident</h1>
+  <div id="status"></div>
+
+  <form id="form" autocomplete="off">
+    <div class="grid">
+      <div>
+        <div class="row"><label for="number">Number</label><input id="number" readonly placeholder="Assigned when saved" /></div>
+        <div class="row"><label for="caller_id"><span class="req">*</span>Caller</label><div class="ref" data-ref="caller_id"></div></div>
+        <div class="row"><label for="category">Category</label><select id="category"></select></div>
+        <div class="row"><label for="subcategory">Subcategory</label><select id="subcategory"></select></div>
+        <div class="row"><label for="business_service">Service</label><div class="ref" data-ref="business_service"></div></div>
+        <div class="row"><label for="service_offering">Service offering</label><div class="ref" data-ref="service_offering"></div></div>
+        <div class="row"><label for="cmdb_ci">Configuration item</label><div class="ref" data-ref="cmdb_ci"></div></div>
+      </div>
+      <div>
+        <div class="row"><label for="contact_type">Channel</label><select id="contact_type"></select></div>
+        <div class="row"><label for="state">State</label><select id="state"></select></div>
+        <div class="row"><label for="impact">Impact</label><select id="impact"></select></div>
+        <div class="row"><label for="urgency">Urgency</label><select id="urgency"></select></div>
+        <div class="row"><label for="priority">Priority</label><input id="priority" readonly title="Calculated by ServiceNow from Impact and Urgency" /></div>
+        <div class="row"><label for="assignment_group">Assignment group</label><div class="ref" data-ref="assignment_group"></div></div>
+        <div class="row"><label for="assigned_to">Assigned to</label><div class="ref" data-ref="assigned_to"></div></div>
+      </div>
+      <div class="row wide"><label for="short_description"><span class="req">*</span>Short description</label><input id="short_description" /></div>
+      <div class="row wide top"><label for="description">Description</label><textarea id="description" rows="4"></textarea></div>
+    </div>
+    <div class="actions"><button type="submit" class="primary" id="submit">Submit</button></div>
+  </form>
+  <div id="confirm"></div>
+
+  <script type="module">
+    import { App } from 'https://esm.sh/@modelcontextprotocol/ext-apps@1.7.2/app-with-deps';
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    const show = (kind, html) => { $('status').innerHTML = html ? `<div class="banner ${kind}">${html}</div>` : ''; };
+    // Text typed by the user goes into an encoded query; ^ would start a new clause.
+    const q = (s) => String(s ?? '').replace(/\^/g, ' ').trim();
+    const like = (field, text) => (q(text) ? `${field}LIKE${q(text)}^` : '');
+
+    const app = new App({ name: 'Incident form', version: '1.0.0' });
+
+    function payload(result) {
+      if (result.structuredContent) return result.structuredContent;
+      try { return JSON.parse(result.content?.find((c) => c.type === 'text')?.text ?? ''); } catch { return {}; }
+    }
+    const errorText = (result) => result.content?.find((c) => c.type === 'text')?.text || 'The tool failed.';
+    const rowsOf = (result) => {
+      if (result.isError) throw new Error(errorText(result));
+      const d = payload(result);
+      return Array.isArray(d.result) ? d.result : [];
+    };
+
+    // ── Choice fields ────────────────────────────────────────────────────────
+    // Out-of-box values, used until (or if) the instance's own choices load.
+    const OOTB = {
+      category: [['inquiry', 'Inquiry / Help'], ['software', 'Software'], ['hardware', 'Hardware'], ['network', 'Network'], ['database', 'Database']],
+      subcategory: [
+        ['antivirus', 'Antivirus', 'inquiry'], ['email', 'Email', 'inquiry'], ['internal application', 'Internal Application', 'inquiry'],
+        ['email', 'Email', 'software'], ['os', 'Operating System', 'software'],
+        ['cpu', 'CPU', 'hardware'], ['disk', 'Disk', 'hardware'], ['keyboard', 'Keyboard', 'hardware'], ['memory', 'Memory', 'hardware'], ['monitor', 'Monitor', 'hardware'], ['mouse', 'Mouse', 'hardware'],
+        ['dhcp', 'DHCP', 'network'], ['dns', 'DNS', 'network'], ['ip address', 'IP Address', 'network'], ['vpn', 'VPN', 'network'], ['wireless', 'Wireless', 'network'],
+        ['db2', 'DB2', 'database'], ['ms sql server', 'MS SQL Server', 'database'], ['oracle', 'Oracle', 'database'],
+      ],
+      contact_type: [['email', 'Email'], ['phone', 'Phone'], ['self-service', 'Self-service'], ['virtual_agent', 'Virtual Agent'], ['walk-in', 'Walk-in']],
+      state: [['1', 'New'], ['2', 'In Progress'], ['3', 'On Hold'], ['6', 'Resolved'], ['7', 'Closed'], ['8', 'Canceled']],
+      impact: [['1', '1 - High'], ['2', '2 - Medium'], ['3', '3 - Low']],
+      urgency: [['1', '1 - High'], ['2', '2 - Medium'], ['3', '3 - Low']],
+    };
+    const DEFAULTS = { state: '1', impact: '3', urgency: '3' };
+    const NONE = ['category', 'subcategory', 'contact_type']; // these start at "-- None --"
+    let choices = Object.fromEntries(Object.entries(OOTB).map(([f, list]) => [f, list.map(([value, label, dep]) => ({ value, label, dep }))]));
+
+    function fillSelect(field, keep) {
+      const sel = $(field);
+      const current = keep ?? sel.value;
+      let list = choices[field] || [];
+      if (field === 'subcategory') list = list.filter((c) => !c.dep || c.dep === $('category').value);
+      sel.innerHTML = (NONE.includes(field) ? '<option value="">-- None --</option>' : '') +
+        list.map((c) => `<option value="${esc(c.value)}">${esc(c.label)}</option>`).join('');
+      sel.value = list.some((c) => c.value === current) ? current : NONE.includes(field) ? '' : DEFAULTS[field] ?? list[0]?.value ?? '';
+    }
+    const fillAll = () => Object.keys(OOTB).forEach((f) => fillSelect(f));
+
+    // The instance's own choices. Incident inherits impact/urgency/contact_type from task, so a
+    // field's incident choices replace task's when both exist.
+    async function loadChoices() {
+      try {
+        const rows = rowsOf(await app.callServerTool({
+          name: 'get_incident_choices',
+          arguments: {
+            sysparm_query: `nameINincident,task^elementIN${Object.keys(OOTB).join(',')}^inactive=false^language=en^ORDERBYsequence`,
+            sysparm_fields: 'name,element,value,label,dependent_value,sequence',
+            sysparm_limit: '500',
+          },
+        }));
+        const own = new Set(rows.filter((r) => r.name === 'incident').map((r) => r.element));
+        const next = {};
+        for (const r of rows) {
+          if (r.name === 'task' && own.has(r.element)) continue;
+          const list = (next[r.element] ||= []);
+          if (!list.some((c) => c.value === r.value && c.dep === (r.dependent_value || undefined))) {
+            list.push({ value: r.value, label: r.label, dep: r.dependent_value || undefined });
+          }
+        }
+        for (const [f, list] of Object.entries(next)) if (list.length) choices[f] = list;
+        fillAll();
+      } catch { /* keep the out-of-box values */ }
+    }
+
+    // Priority from the standard Impact x Urgency lookup (ServiceNow sets the real value).
+    const PRIORITY = { 2: '1 - Critical', 3: '2 - High', 4: '3 - Moderate', 5: '4 - Low', 6: '5 - Planning' };
+    const updatePriority = () => { $('priority').value = PRIORITY[Number($('impact').value) + Number($('urgency').value)] ?? ''; };
+
+    // ── Reference fields ─────────────────────────────────────────────────────
+    // Each one names its search tool literally, so the gateway can check the tools exist.
+    const LIMIT = '8';
+    const REFS = {
+      caller_id: {
+        search: (t) => app.callServerTool({ name: 'search_users', arguments: { sysparm_query: `active=true^${like('name', t)}ORDERBYname`, sysparm_fields: 'sys_id,name,email', sysparm_limit: LIMIT } }),
+        label: (r) => r.name, detail: (r) => r.email,
+      },
+      business_service: {
+        search: (t) => app.callServerTool({ name: 'search_services', arguments: { sysparm_query: `${like('name', t)}ORDERBYname`, sysparm_fields: 'sys_id,name', sysparm_limit: LIMIT } }),
+        label: (r) => r.name,
+      },
+      service_offering: {
+        search: (t) => app.callServerTool({ name: 'search_service_offerings', arguments: { sysparm_query: `${refs.business_service.value ? `parent=${refs.business_service.value}^` : ''}${like('name', t)}ORDERBYname`, sysparm_fields: 'sys_id,name', sysparm_limit: LIMIT } }),
+        label: (r) => r.name,
+      },
+      cmdb_ci: {
+        search: (t) => app.callServerTool({ name: 'search_cis', arguments: { sysparm_query: `install_status!=7^${like('name', t)}ORDERBYname`, sysparm_fields: 'sys_id,name,sys_class_name', sysparm_limit: LIMIT } }),
+        label: (r) => r.name, detail: (r) => r.sys_class_name,
+      },
+      assignment_group: {
+        search: (t) => app.callServerTool({ name: 'search_groups', arguments: { sysparm_query: `active=true^${like('name', t)}ORDERBYname`, sysparm_fields: 'sys_id,name', sysparm_limit: LIMIT } }),
+        label: (r) => r.name,
+      },
+      assigned_to: {
+        search: (t) => app.callServerTool({ name: 'search_users', arguments: { sysparm_query: `active=true^${like('name', t)}ORDERBYname`, sysparm_fields: 'sys_id,name,email', sysparm_limit: LIMIT } }),
+        label: (r) => r.name, detail: (r) => r.email,
+      },
+    };
+
+    // A typeahead: type to search, pick a row to set the sys_id; editing the text clears it.
+    function refField(field, cfg) {
+      const box = document.querySelector(`[data-ref="${field}"]`);
+      box.innerHTML = `<input id="${field}" placeholder="Search" /><button type="button" title="Search" aria-label="Search">&#128269;</button>`;
+      const input = box.querySelector('input');
+      const state = { value: '', label: '', set, search, close };
+      let timer, seq = 0, rows = [], active = -1;
+
+      function set(sysId, label) {
+        state.value = sysId; state.label = label;
+        input.value = label;
+        box.classList.toggle('picked', !!sysId);
+        close();
+        if (field === 'business_service' && refs.service_offering.value) refs.service_offering.set('', '');
+      }
+      function close() { box.querySelector('.menu')?.remove(); rows = []; active = -1; }
+      function render(html) {
+        let menu = box.querySelector('.menu');
+        if (!menu) { menu = document.createElement('div'); menu.className = 'menu'; box.appendChild(menu); }
+        menu.innerHTML = html;
+      }
+      function paint() {
+        render(rows.length
+          ? rows.map((r, i) => `<div data-i="${i}" class="${i === active ? 'active' : ''}">${esc(cfg.label(r))}${cfg.detail?.(r) ? `<small>${esc(cfg.detail(r))}</small>` : ''}</div>`).join('')
+          : '<div class="empty">No matches</div>');
+      }
+      async function search(text) {
+        const mine = ++seq;
+        render('<div class="empty">Searching…</div>');
+        try {
+          const found = rowsOf(await cfg.search(text));
+          if (mine !== seq) return found;
+          rows = found; active = rows.length ? 0 : -1; paint();
+          return found;
+        } catch (err) {
+          if (mine === seq) render(`<div class="empty">${esc(err.message)}</div>`);
+          return [];
+        }
+      }
+
+      input.addEventListener('input', () => {
+        if (state.value) { state.value = ''; state.label = ''; box.classList.remove('picked'); }
+        clearTimeout(timer);
+        timer = setTimeout(() => search(input.value), 250);
+      });
+      input.addEventListener('keydown', (e) => {
+        if (!rows.length) return;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          active = (active + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length; paint();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (rows[active]) set(rows[active].sys_id, cfg.label(rows[active]));
+        } else if (e.key === 'Escape') close();
+      });
+      box.querySelector('button').addEventListener('click', () => { input.focus(); search(state.value ? '' : input.value); });
+      box.addEventListener('mousedown', (e) => {
+        const item = e.target.closest('.menu [data-i]');
+        if (!item) return;
+        e.preventDefault();
+        const r = rows[Number(item.dataset.i)];
+        set(r.sys_id, cfg.label(r));
+      });
+      input.addEventListener('blur', () => setTimeout(close, 150));
+      return state;
+    }
+    const refs = Object.fromEntries(Object.entries(REFS).map(([f, cfg]) => [f, refField(f, cfg)]));
+
+    // Prefill a reference from a name Claude passed: pick it when one record matches (or one
+    // matches exactly); otherwise leave the text and show the matches.
+    async function prefillRef(field, text) {
+      const ref = refs[field];
+      $(field).value = text;
+      const found = await ref.search(text);
+      const exact = found.filter((r) => REFS[field].label(r)?.toLowerCase() === text.toLowerCase());
+      const pick = found.length === 1 ? found[0] : exact.length === 1 ? exact[0] : null;
+      if (pick) ref.set(pick.sys_id, REFS[field].label(pick));
+      else ref.close();
+    }
+
+    // ── Tool input: what Claude passed to open_incident_form ─────────────────
+    // Choice fields take values (e.g. urgency "1"); reference fields take names.
+    const REF_ARGS = { caller: 'caller_id', service: 'business_service', service_offering: 'service_offering', configuration_item: 'cmdb_ci', assignment_group: 'assignment_group', assigned_to: 'assigned_to' };
+    let input = {};
+    let ready = false;
+    async function applyInput() {
+      const a = input;
+      for (const f of ['short_description', 'description']) if (a[f]) $(f).value = a[f];
+      for (const f of ['category', 'contact_type', 'state', 'impact', 'urgency']) if (a[f] != null && a[f] !== '') { $(f).value = String(a[f]); fillSelect(f); }
+      fillSelect('subcategory', a.subcategory != null ? String(a.subcategory) : undefined);
+      updatePriority();
+      // The service must be set before its offering, which is filtered by it.
+      for (const [arg, field] of Object.entries(REF_ARGS)) if (a[arg]) await prefillRef(field, String(a[arg]));
+    }
+    app.ontoolinput = (params) => {
+      input = params.arguments || {};
+      if (ready) applyInput();
+    };
+
+    // ── Submit ───────────────────────────────────────────────────────────────
+    const LABELS = {
+      caller_id: 'Caller', category: 'Category', subcategory: 'Subcategory', business_service: 'Service', service_offering: 'Service offering',
+      cmdb_ci: 'Configuration item', contact_type: 'Channel', state: 'State', impact: 'Impact', urgency: 'Urgency',
+      assignment_group: 'Assignment group', assigned_to: 'Assigned to', short_description: 'Short description', description: 'Description',
+    };
+    function collect() {
+      const args = {}, shown = [];
+      for (const f of Object.keys(LABELS)) {
+        let value, label;
+        if (refs[f]) { value = refs[f].value; label = refs[f].label; }
+        else if ($(f).tagName === 'SELECT') { value = $(f).value; label = $(f).selectedOptions[0]?.textContent; }
+        else { value = $(f).value.trim(); label = value; }
+        if (value) { args[f] = value; shown.push([LABELS[f], label]); }
+      }
+      return { args, shown };
+    }
+
+    function confirmCreate(shown) {
+      return new Promise((resolve) => {
+        $('confirm').innerHTML = `<div class="confirm"><b>Create this incident?</b>
+          <dl>${shown.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+          <div class="actions"><button type="button" id="no">Cancel</button><button type="button" id="yes" class="primary">Create incident</button></div></div>`;
+        $('no').onclick = () => { $('confirm').innerHTML = ''; resolve(false); };
+        $('yes').onclick = () => { $('confirm').innerHTML = ''; resolve(true); };
+        $('yes').focus();
+      });
+    }
+
+    $('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const missing = [];
+      if (!refs.caller_id.value) missing.push($('caller_id').value ? 'Caller (pick a user from the list)' : 'Caller');
+      if (!$('short_description').value.trim()) missing.push('Short description');
+      if (missing.length) { show('error', `Fill in: ${esc(missing.join(', '))}`); return; }
+      const unpicked = Object.keys(REFS).filter((f) => !refs[f].value && $(f).value.trim());
+      if (unpicked.length) { show('error', `Pick a record from the list for: ${esc(unpicked.map((f) => LABELS[f]).join(', '))}, or clear the text.`); return; }
+      show();
+
+      const { args, shown } = collect();
+      if (!(await confirmCreate(shown))) return;
+
+      $('submit').disabled = true;
+      const res = await app.callServerTool({ name: 'create_incident', arguments: args });
+      if (res.isError) {
+        show('error', esc(errorText(res)));
+        $('submit').disabled = false;
+        return;
+      }
+      const data = payload(res);
+      const inc = data.result || data; // Table API: { result: { number, sys_id, ... } }
+      $('number').value = inc.number ?? '';
+      for (const el of $('form').querySelectorAll('input, select, textarea, button')) el.disabled = true;
+      show('ok', `Created <b>${esc(inc.number)}</b>`);
+
+      await app.updateModelContext({
+        content: [{
+          type: 'text',
+          text: `The user created incident ${inc.number} (sys_id ${inc.sys_id}): ` + shown.map(([k, v]) => `${k}: ${v}`).join('; '),
+        }],
+      });
+    });
+
+    for (const f of ['impact', 'urgency']) $(f).addEventListener('change', updatePriority);
+    $('category').addEventListener('change', () => fillSelect('subcategory'));
+
+    fillAll();
+    updatePriority();
+    await app.connect();
+    await loadChoices();
+    updatePriority();
+    ready = true;
+    applyInput();
+  </script>
+</body>
+</html>
