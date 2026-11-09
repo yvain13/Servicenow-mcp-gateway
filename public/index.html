@@ -468,7 +468,7 @@
         </div>
         <div class="two">
           <div class="field"><label>Client ID</label><input id="oa_client" class="mono"></div>
-          <div class="field"><label>Client secret <span class="hint" id="oa_secretHint">optional; leave empty for PKCE</span></label><input id="oa_secret" type="password" class="mono" autocomplete="off"></div>
+          <div class="field"><label>Client secret <span class="hint" id="oa_secretHint">needed unless the ServiceNow app is a Public Client</span></label><input id="oa_secret" type="password" class="mono" autocomplete="off"></div>
         </div>
         <div class="field"><label>Scope <span class="hint">optional</span></label><input id="oa_scope" class="mono" placeholder="useraccount"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -482,7 +482,7 @@
         <div id="oa_sessions"></div>
       </div>
       <div class="note" style="color:var(--ink-soft);background:var(--oat);border-color:var(--line)">
-        <div>ServiceNow setup: <b>System OAuth → Application Registry → New → Create an OAuth API endpoint for external clients</b>. Set the Redirect URL above, and copy the Client ID here. For a public client, leave the secret empty and use PKCE.</div>
+        <div>ServiceNow setup: <b>System OAuth → Application Registry → New → Create an OAuth API endpoint for external clients</b>. Set <b>Redirect URL</b> to the URL above (only that one), tick <b>Public Client</b> (and <b>Use PKCE</b> if shown), and copy the Client ID here; no secret needed. If you don't tick Public Client, also paste its Client Secret.</div>
       </div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('oauthModal')">Close</button></div>
@@ -933,7 +933,7 @@ function renderOAuth() {
   document.getElementById('oa_redirect').value = oauthState.redirectUrl;
   document.getElementById('oa_creds').innerHTML = oauthState.credentials.length ? oauthState.credentials.map(c => `
     <div class="app-card" style="padding:11px 14px;margin-bottom:8px;display:flex;gap:10px;align-items:center">
-      <div style="flex:1;min-width:0"><b>${esc(c.label)}</b><div class="meta" style="margin-top:2px"><code>${esc(c.instanceUrl)}</code> · client <code>${esc(c.clientId)}</code>${c.hasSecret?' · secret saved':' · PKCE (no secret)'}${c.scope?` · scope <code>${esc(c.scope)}</code>`:''}</div></div>
+      <div style="flex:1;min-width:0"><b>${esc(c.label)}</b><div class="meta" style="margin-top:2px"><code>${esc(c.instanceUrl)}</code> · client <code>${esc(c.clientId)}</code>${c.hasSecret?' · secret saved':' · no secret (app must be a Public Client)'}${c.scope?` · scope <code>${esc(c.scope)}</code>`:''}</div></div>
       <button class="btn btn-ghost btn-sm" onclick="editOAuthCred('${esc(c.id)}')">Edit</button>
       <button class="btn btn-ghost btn-sm" onclick="deleteOAuthCred('${esc(c.id)}')">Delete</button>
     </div>`).join('') : '<div class="no-tools" style="padding:14px">None yet. Add one below, or users can add one on the sign-in page.</div>';
@@ -947,7 +947,7 @@ function renderOAuth() {
 function resetOAuthForm() {
   for (const k of ['oa_id','oa_label','oa_instance','oa_client','oa_secret','oa_scope']) clearId(k);
   document.getElementById('oa_formTitle').textContent = 'Add a credential';
-  document.getElementById('oa_secretHint').textContent = 'optional; leave empty for PKCE';
+  document.getElementById('oa_secretHint').textContent = 'needed unless the ServiceNow app is a Public Client';
   showErr('oa_err', '');
 }
 
@@ -961,7 +961,7 @@ function editOAuthCred(id) {
   document.getElementById('oa_secret').value = '';
   document.getElementById('oa_scope').value = c.scope || '';
   document.getElementById('oa_formTitle').textContent = `Edit "${c.label}"`;
-  document.getElementById('oa_secretHint').textContent = c.hasSecret ? 'leave empty to keep the saved secret; "-" removes it' : 'optional; leave empty for PKCE';
+  document.getElementById('oa_secretHint').textContent = c.hasSecret ? 'leave empty to keep the saved secret; "-" removes it' : 'needed unless the ServiceNow app is a Public Client';
 }
 
 async function saveOAuthCred() {

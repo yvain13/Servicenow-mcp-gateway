@@ -36,6 +36,7 @@ export function redirectUrl(): string {
 
 const ACCESS_TTL_S = 3600;
 const PENDING_TTL_MS = 10 * 60_000;
+export const FAILURE_PAUSE_MS = 2 * 60_000;
 
 export interface OAuthCredential {
   id: string;
@@ -185,6 +186,24 @@ export class OAuthBroker {
   private access = new Map<string, Grant>();
   private refresh = new Map<string, Grant>();
   readonly sessions = new Map<string, SNSession>();
+  // Last failed sign-in per server: for a short while, tool calls report it instead of
+  // opening yet another sign-in tab.
+  private failures = new Map<string, { message: string; until: number }>();
+
+  recentFailure(serverId: string): string | undefined {
+    const f = this.failures.get(serverId);
+    if (f && f.until > Date.now()) return f.message;
+    this.failures.delete(serverId);
+    return undefined;
+  }
+
+  clearFailure(serverId: string): void {
+    this.failures.delete(serverId);
+  }
+
+  private fail(serverId: string, message: string): void {
+    this.failures.set(serverId, { message, until: Date.now() + FAILURE_PAUSE_MS });
+  }
 
   private sweep(): void {
     const now = Date.now();
@@ -224,7 +243,7 @@ export class OAuthBroker {
 
   // Step 3: ServiceNow redirected back. Exchange its code, resolve the user, and send the
   // browser back to the MCP client with a gateway authorization code.
-  async complete(query: Record<string, unknown>): Promise<{ redirect: string } | { error: string }> {
+  async complete(query: Record<string, unknown>): Promise<{ redirect: string } | { error: string; hint?: string; notify?: string }> {
     const state = String(query["state"] ?? "");
     const up = this.upstream.get(state);
     if (!up) return { error: "This sign-in request has expired or was already used. Start again from your MCP client." };
@@ -239,7 +258,9 @@ export class OAuthBroker {
       return { redirect: u.href };
     };
     if (query["error"]) {
-      return back({ error: "access_denied", error_description: String(query["error_description"] ?? query["error"]) });
+      const why = String(query["error_description"] ?? query["error"]);
+      this.fail(pend.serverId, `ServiceNow sign-in was cancelled or refused (${why}).`);
+      return back({ error: "access_denied", error_description: why });
     }
     const code = String(query["code"] ?? "");
     if (!code) return { error: "ServiceNow did not return an authorization code." };
@@ -253,7 +274,11 @@ export class OAuthBroker {
         code_verifier: up.verifier,
       });
     } catch (e) {
-      return { error: `ServiceNow did not issue a token: ${e instanceof Error ? e.message : e}` };
+      const why = e instanceof Error ? e.message : String(e);
+      const hint = tokenHint(why, up.cred);
+      this.fail(pend.serverId, `ServiceNow did not issue a token (${why}). ${hint}`);
+      // Tell the MCP client the sign-in failed, so it stops waiting instead of retrying.
+      return { error: `ServiceNow did not issue a token: ${why}`, hint, notify: back({ error: "access_denied", error_description: why }).redirect };
     }
     const user = await whoAmI(up.cred.instanceUrl, tok.access_token);
     const session: SNSession = {
@@ -270,6 +295,7 @@ export class OAuthBroker {
       createdAt: Date.now(),
     };
     this.sessions.set(session.id, session);
+    this.clearFailure(pend.serverId);
     const gwCode = token();
     this.codes.set(gwCode, {
       snSessionId: session.id,
@@ -357,6 +383,20 @@ export class OAuthBroker {
 }
 
 export const broker = new OAuthBroker();
+
+// The usual reasons ServiceNow's token endpoint refuses an authorization code.
+export function tokenHint(why: string, cred: OAuthCredential): string {
+  if (/access_denied|invalid_client|unauthorized|401/i.test(why) && !cred.clientSecret) {
+    return "This credential has no client secret, so the ServiceNow OAuth app must be a public client. In ServiceNow, open System OAuth → Application Registry → your app and tick Public Client (and Use PKCE if shown). Or paste the app's Client Secret into the credential (OAuth sign-in → Edit).";
+  }
+  if (/access_denied|invalid_client|unauthorized|401/i.test(why)) {
+    return `Check that the client secret is current, the app is Active, and its Redirect URL includes ${redirectUrl()} exactly.`;
+  }
+  if (/invalid_grant/i.test(why)) {
+    return `The code was rejected: check that the app's Redirect URL includes ${redirectUrl()} exactly, then sign in again.`;
+  }
+  return "Check the OAuth app in ServiceNow (System OAuth → Application Registry) and the system log for details.";
+}
 
 async function tokenRequest(
   cred: OAuthCredential,
@@ -530,8 +570,16 @@ export function callbackRouter(b: OAuthBroker = broker): Router {
   r.get("/oauth/callback", async (req: Request, res: Response) => {
     res.set("Referrer-Policy", "no-referrer");
     const out = await b.complete(req.query as Record<string, unknown>);
-    if ("redirect" in out) res.redirect(302, out.redirect);
-    else res.status(400).type("html").send(messagePage("Sign-in failed", out.error));
+    if ("redirect" in out) {
+      res.redirect(302, out.redirect);
+      return;
+    }
+    const extra =
+      (out.hint ? `<p class="sub"><b>How to fix:</b> ${esc(out.hint)}</p>` : "") +
+      `<p class="sub">Claude won't open another sign-in for ${FAILURE_PAUSE_MS / 60_000} minutes. Fix the setting, then run the tool again.</p>` +
+      // Let the MCP client (mcp-remote) know, so it stops waiting for this sign-in.
+      (out.notify ? `<script>fetch(${JSON.stringify(out.notify).replace(/</g, "\\u003c")}, { mode: "no-cors" }).catch(() => {});</script>` : "");
+    res.status(400).type("html").send(messagePage("Sign-in failed", out.error, extra));
   });
   return r;
 }
@@ -587,7 +635,7 @@ ${error ? `<div class="err">${esc(error)}</div>` : ""}
     <input type="url" id="instanceUrl" name="instanceUrl" placeholder="https://dev12345.service-now.com">
     <div class="row">
       <div><label class="f" for="clientId">Client ID</label><input type="text" id="clientId" name="clientId" autocomplete="off"></div>
-      <div><label class="f" for="clientSecret">Client secret <span style="font-weight:400;color:#8a988e">(optional)</span></label><input type="password" id="clientSecret" name="clientSecret" autocomplete="off" placeholder="leave empty for PKCE"></div>
+      <div><label class="f" for="clientSecret">Client secret <span style="font-weight:400;color:#8a988e">(unless Public Client)</span></label><input type="password" id="clientSecret" name="clientSecret" autocomplete="off" placeholder="empty if the app is a Public Client"></div>
     </div>
     <div class="row">
       <div><label class="f" for="label">Name</label><input type="text" id="label" name="label" placeholder="My PDI"></div>
@@ -599,7 +647,9 @@ ${error ? `<div class="err">${esc(error)}</div>` : ""}
   </div>
   <button class="primary" type="submit">Continue to ServiceNow</button>
 </form>
-<div class="note">The ServiceNow OAuth app must allow this redirect URL:<br><code>${esc(redirectUrl())}</code></div>
+<div class="note">The ServiceNow OAuth app must allow this redirect URL:<br><code>${esc(redirectUrl())}</code><br>
+Only this one. The port in this page's address bar belongs to Claude's own temporary sign-in listener; it changes each time and isn't registered in ServiceNow.<br>
+No client secret? Tick <b>Public Client</b> on the app in ServiceNow.</div>
 </div></main>
 <script>
   const $ = (id) => document.getElementById(id);
@@ -620,7 +670,7 @@ ${error ? `<div class="err">${esc(error)}</div>` : ""}
 </script></body></html>`;
 }
 
-export function messagePage(title: string, message: string): string {
+export function messagePage(title: string, message: string, extraHtml = ""): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><title>${esc(title)}</title><style>${PAGE_CSS}</style></head><body><main><div class="card"><h1>${esc(title)}</h1><p class="sub">${esc(message)}</p></div></main></body></html>`;
+<meta name="referrer" content="no-referrer"><title>${esc(title)}</title><style>${PAGE_CSS}</style></head><body><main><div class="card"><h1>${esc(title)}</h1><p class="sub">${esc(message)}</p>${extraHtml}</div></main></body></html>`;
 }

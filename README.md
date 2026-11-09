@@ -133,8 +133,11 @@ With identity **OAuth sign-in**, a server follows the [MCP authorization](https:
 
 1. **System OAuth → Application Registry → New → Create an OAuth API endpoint for external clients**.
 2. Set **Redirect URL** to the URL above.
-3. For a public client using PKCE, leave the secret empty (enable PKCE on the app if your release shows the option). A confidential client works too: save its secret with the credential.
+3. Tick **Public Client** (and **Use PKCE** if your release shows it), then save the credential without a secret. If the app isn't a public client, ServiceNow requires its **Client Secret** on the token request (otherwise the token request fails with `access_denied`), so paste the secret into the credential instead.
+   Register only the gateway's redirect URL. The port you may see in the sign-in page's address (e.g. `localhost:34355`) is mcp-remote's temporary listener, not something ServiceNow needs.
 4. Copy the **Client ID** into a saved credential in the gateway (**OAuth sign-in → Add a credential**), or let users enter it on the sign-in page.
+
+**If sign-in fails**, the page explains why and how to fix it, and tells the client the sign-in ended. For the next 2 minutes, tool calls on that server return the reason instead of opening more sign-in tabs.
 
 **Tokens are kept in memory.** After a gateway restart, the next tool call gets `401` and users sign in again. **OAuth sign-in** in the sidebar lists who is signed in, with **Sign out**.
 

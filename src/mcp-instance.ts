@@ -468,6 +468,21 @@ export class MCPInstance {
         next();
         return;
       }
+      // Right after a failed sign-in, report why instead of opening another sign-in tab.
+      const failure = broker.recentFailure(this.config.id);
+      if (failure) {
+        const m = typeof header === "string" ? /^Bearer\s+(.+)$/i.exec(header) : null;
+        const valid = m ? await provider.verifyAccessToken(m[1]!).then(() => true, () => false) : false;
+        if (!valid) {
+          const reply = (msg: any) => ({
+            jsonrpc: "2.0",
+            id: msg?.id ?? null,
+            result: { content: [{ type: "text", text: `ServiceNow sign-in failed: ${failure} Fix it, then try again in a couple of minutes.` }], isError: true },
+          });
+          res.status(200).json(Array.isArray(req.body) ? messages.map(reply) : reply(req.body));
+          return;
+        }
+      }
       bearer(req, res, next);
     };
     this.app.use(whenOAuth(auth));

@@ -278,4 +278,38 @@ describe("OAuth sign-in", () => {
     const secretFree = JSON.parse(readFileSync(join(dir, "oauth-credentials.json"), "utf8"));
     expect(secretFree[0].clientSecret).toBeUndefined();
   });
+
+  it("explains a refused token, releases the client, and pauses new sign-in prompts", async () => {
+    // Like the user's PDI: the app is not a public client, so ServiceNow wants the secret.
+    sn.oauthApps["private-client"] = { redirectUri: REDIRECT, secret: "s3cret" };
+    const reg = await fetch(`${base}/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ redirect_uris: [CLIENT_CB], token_endpoint_auth_method: "none" }) }).then((r) => r.json());
+    const u = new URL(`${base}/authorize`);
+    for (const [k, v] of Object.entries({ response_type: "code", client_id: reg.client_id, redirect_uri: CLIENT_CB, code_challenge: "z".repeat(43), code_challenge_method: "S256", state: "st" })) u.searchParams.set(k, v);
+    const pid = /name="pid" value="([^"]+)"/.exec(await fetch(u).then((r) => r.text()))![1]!;
+    const start = await fetch(`${base}/oauth/start`, { method: "POST", redirect: "manual", body: new URLSearchParams({ pid, mode: "new", instanceUrl: sn.url, clientId: "private-client", save: "" }) });
+    const snBack = await fetch(start.headers.get("location")!, { redirect: "manual" });
+    const cb = await fetch(snBack.headers.get("location")!, { redirect: "manual" });
+    expect(cb.status).toBe(400);
+    const page = await cb.text();
+    expect(page).toContain("ServiceNow did not issue a token: invalid_client");
+    expect(page).toContain("tick Public Client");
+    // The MCP client's callback is told the sign-in failed (so mcp-remote stops waiting).
+    expect(page).toMatch(/fetch\("http:\/\/127\.0\.0\.1:47999\/callback\?error=access_denied/);
+
+    // For the next couple of minutes a tool call reports the reason instead of a new 401 / sign-in tab.
+    const call = await fetch(`${base}/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "get_change", arguments: {} } }) });
+    expect(call.status).toBe(200);
+    const body = await call.json();
+    expect(body).toMatchObject({ id: 7, result: { isError: true } });
+    expect(body.result.content[0].text).toMatch(/sign-in failed.*Public Client/s);
+
+    // With the secret, sign-in works and clears the pause.
+    oauth.broker.clearFailure("srv-oauth");
+    const tok = await signIn({ mode: "new", instanceUrl: sn.url, clientId: "private-client", clientSecret: "s3cret", save: "" });
+    const c = await mcp(tok.access_token);
+    const ok: any = await c.callTool({ name: "get_change", arguments: { number: "CHG0001" } });
+    expect(ok.isError).toBeFalsy();
+    await c.close();
+    expect(oauth.broker.recentFailure("srv-oauth")).toBeUndefined();
+  });
 });
