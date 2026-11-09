@@ -1,4 +1,3 @@
-import { demoHandlers } from "./demo.js";
 import { changeHandlers } from "./change.js";
 import { approvalHandlers } from "./approvals.js";
 import { kitHandlers } from "./kit.js";
@@ -8,7 +7,6 @@ export * from "./types.js";
 
 // Code-backed tool handlers, referenced from store.json as { kind: "handler", handler: "<name>" }.
 export const handlers: HandlerRegistry = {
-  ...demoHandlers,
   ...changeHandlers,
   ...approvalHandlers,
   ...kitHandlers,

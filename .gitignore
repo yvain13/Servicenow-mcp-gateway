@@ -5,3 +5,5 @@ dist/
 data/audit.log
 data/oauth-credentials.json
 data/oauth-clients.json
+data/store.json
+data/apps/

@@ -1,8 +1,5 @@
 {
-  "instance": {
-    "url": "https://dev274250.service-now.com",
-    "username": "admin"
-  },
+  "instance": null,
   "servers": [
     {
       "name": "incident-mcp",
@@ -1543,74 +1540,6 @@
             }
           ],
           "id": "5c25c200-24eb-4625-b87c-65123d8a5e24"
-        }
-      ]
-    },
-    {
-      "name": "apps-demo",
-      "description": "Sample MCP App (Phase 1 foundation check): renders a hello app that calls an app-only tool.",
-      "port": 7830,
-      "id": "1b5c4fc3-75e4-46d3-8d51-fb9df04e5bc2",
-      "appsEnabled": true,
-      "apps": [
-        {
-          "uri": "ui://apps-demo/hello",
-          "name": "Hello app",
-          "description": "Minimal MCP App",
-          "bundle": "apps/hello/dist/index.html"
-        }
-      ],
-      "tools": [
-        {
-          "name": "open_hello",
-          "description": "Open the hello sample app.",
-          "method": "POST",
-          "endpoint": "",
-          "apiType": "scripted",
-          "parameters": [
-            {
-              "name": "name",
-              "description": "Who to greet",
-              "type": "string",
-              "required": false,
-              "in": "body"
-            }
-          ],
-          "kind": "handler",
-          "handler": "demo.open_hello",
-          "id": "d2c372b5-4594-439f-825d-2363a3948357",
-          "ui": {
-            "resourceUri": "ui://apps-demo/hello",
-            "visibility": [
-              "model",
-              "app"
-            ]
-          }
-        },
-        {
-          "name": "hello_echo",
-          "description": "Echo a message back (app-only).",
-          "method": "POST",
-          "endpoint": "",
-          "apiType": "scripted",
-          "parameters": [
-            {
-              "name": "message",
-              "description": "Message",
-              "type": "string",
-              "required": true,
-              "in": "body"
-            }
-          ],
-          "kind": "handler",
-          "handler": "demo.echo",
-          "id": "11991765-b978-4438-900e-dcaad49e95ba",
-          "ui": {
-            "resourceUri": "ui://apps-demo/hello",
-            "visibility": [
-              "app"
-            ]
-          }
         }
       ]
     }

@@ -348,7 +348,6 @@
       <div class="err-msg" id="toolErr"></div>
     </div>
     <div class="modal-foot">
-      <button class="btn btn-ghost btn-sm" onclick="testTool()">Test against instance</button>
       <button class="btn btn-ghost" onclick="closeModal('toolModal')">Cancel</button>
       <button class="btn btn-primary" id="toolModalSubmit" onclick="saveTool()">Save Tool</button>
     </div>
@@ -1188,19 +1187,6 @@ async function saveTool() {
   const s = servers.find(x => x.id === activeId);
   if (s) renderDetail(s);
   toast(isEdit ? `Tool "${t.name}" updated` : `Tool "${t.name}" added`);
-}
-
-async function testTool() {
-  if (!activeId) { showErr('toolErr','Select a server first'); return; }
-  const params = collectParams();
-  const body = {};
-  params.filter(p=>p.required).forEach(p => body[p.name] = p.type === 'number' ? 0 : p.type === 'boolean' ? false : '');
-  const r = await api('POST', `/servers/test-adhoc`, { // will 404 gracefully — placeholder
-    name: v('tl_name'), endpoint: v('tl_endpoint'),
-    method: v('tl_method'), apiType: document.querySelector('#apiTypeSeg button.on')?.dataset.val || 'table',
-    description: v('tl_desc'), parameters: params
-  });
-  if (r) toast('See console for raw response');
 }
 
 function addParamRow(name='', desc='', type='string', loc='auto', req=false) {

@@ -320,10 +320,6 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     res.json({ ok: oauth.broker.signOut(req.params["id"]!) });
   });
 
-  r.get("/handlers", (_req, res) => {
-    res.json(handlerNames());
-  });
-
   r.delete("/servers/:id", async (req, res) => {
     await manager.stop(req.params["id"]!);
     const ok = storage.deleteServer(req.params["id"]!);
@@ -451,33 +447,6 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     res.json({ ok });
   });
 
-  // Test a tool against the live instance
-  r.post("/servers/:sid/tools/:tid/test", async (req, res) => {
-    const tool = storage.getTool(req.params["sid"]!, req.params["tid"]!);
-    if (!tool) { res.status(404).json({ error: "Tool not found" }); return; }
-
-    if (tool.kind === "handler") {
-      res.status(400).json({
-        ok: false,
-        error: "Code-backed handler tools are tested from an MCP client (they may render an app or need a caller identity).",
-      });
-      return;
-    }
-
-    const creds = getCreds();
-    if (!creds.instanceUrl) {
-      res.status(400).json({ error: "No instance configured" });
-      return;
-    }
-
-    const { callTool } = await import("./servicenow.js");
-    try {
-      const result = await callTool(tool, req.body ?? {}, creds);
-      res.json({ ok: true, result });
-    } catch (err) {
-      res.status(502).json({ ok: false, error: String(err) });
-    }
-  });
 
   return r;
 }

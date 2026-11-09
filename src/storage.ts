@@ -12,10 +12,15 @@ const DATA_FILE = process.env["STORE_FILE"] ?? join(__dir, "../data/store.json")
 export const STORE_DIR = dirname(DATA_FILE);
 export const APPS_DATA_DIR = join(STORE_DIR, "apps");
 
+// Starter servers, used until the first save creates data/store.json (which is not tracked).
+const SEED_FILE = join(__dir, "../data/store.seed.json");
 const EMPTY: Store = { instance: null, servers: [] };
 
 function read(): Store {
-  if (!existsSync(DATA_FILE)) return structuredClone(EMPTY);
+  if (!existsSync(DATA_FILE)) {
+    if (process.env["STORE_FILE"] || !existsSync(SEED_FILE)) return structuredClone(EMPTY);
+    return JSON.parse(readFileSync(SEED_FILE, "utf8")) as Store;
+  }
   try {
     return JSON.parse(readFileSync(DATA_FILE, "utf8")) as Store;
   } catch {
@@ -83,10 +88,6 @@ export function deleteServer(id: string): boolean {
 
 export function listTools(serverId: string): Tool[] {
   return getServer(serverId)?.tools ?? [];
-}
-
-export function getTool(serverId: string, toolId: string): Tool | undefined {
-  return listTools(serverId).find((t) => t.id === toolId);
 }
 
 export function getToolByName(serverId: string, name: string): Tool | undefined {
