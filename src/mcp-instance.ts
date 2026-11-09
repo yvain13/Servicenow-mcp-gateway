@@ -108,6 +108,17 @@ function asStructured(v: unknown): Record<string, unknown> | undefined {
   return { result: v };
 }
 
+// Points an MCP session at a signed-in user's ServiceNow token. Returns false if the
+// sign-in no longer exists.
+function bindUser(session: Session, snSessionId: string): boolean {
+  const sn = broker.sessions.get(snSessionId);
+  if (!sn) return false;
+  session.getCreds = () => ({ instanceUrl: sn.instanceUrl, username: sn.user.userName, password: "", accessToken: sn.access });
+  session.caller = { mode: "user", username: sn.user.userName, sysId: sn.user.sysId, displayName: sn.user.name };
+  session.authSession = sn.id;
+  return true;
+}
+
 export class MCPInstance {
   private app: Express;
   private httpServer: http.Server | null = null;
@@ -281,18 +292,20 @@ export class MCPInstance {
     }
 
     if (mode === "oauth") {
-      // requireBearerAuth already verified the token; it names the ServiceNow session.
-      const sid = req.auth?.extra?.["snSessionId"] as string | undefined;
-      const sn = sid ? broker.sessions.get(sid) : undefined;
-      if (!sn) return { error: "Sign in required." };
-      return {
+      // Clients may connect and list tools before signing in; the first tool call asks for
+      // sign-in (401), and the session is bound to that user once it carries a token.
+      const session: Session = {
         id,
-        getCreds: () => ({ instanceUrl: sn.instanceUrl, username: sn.user.userName, password: "", accessToken: sn.access }),
-        caller: { mode: "user", username: sn.user.userName, sysId: sn.user.sysId, displayName: sn.user.name },
+        getCreds: () => {
+          throw new Error("Sign in to ServiceNow first.");
+        },
+        caller: { mode: "user", username: "(not signed in)" },
         appsClient: false,
         limiter: new RateLimiter(),
-        authSession: sn.id,
       };
+      const sid = req.auth?.extra?.["snSessionId"] as string | undefined;
+      if (sid && !bindUser(session, sid)) return { error: "Sign in required." };
+      return session;
     }
 
     const header = req.headers["authorization"];
@@ -373,11 +386,21 @@ export class MCPInstance {
           return;
         }
 
-        // An OAuth MCP session stays bound to the user who opened it.
+        // An OAuth MCP session is bound to the first user who signs in on it, and stays theirs.
         const existing = this.sessions.get(sessionId!);
-        if (existing?.authSession && existing.authSession !== req.auth?.extra?.["snSessionId"]) {
-          res.status(403).json({ jsonrpc: "2.0", error: { code: -32001, message: "This session belongs to another sign-in." }, id: null });
-          return;
+        const signedIn = req.auth?.extra?.["snSessionId"] as string | undefined;
+        if (existing && signedIn) {
+          if (!existing.authSession) bindUser(existing, signedIn);
+          else if (existing.authSession !== signedIn) {
+            const now = broker.sessions.get(signedIn);
+            const was = broker.sessions.get(existing.authSession);
+            // A re-sign-in by the same person (new token) keeps the session; anyone else is refused.
+            if (now && (!was || was.user.userName === now.user.userName)) bindUser(existing, signedIn);
+            else {
+              res.status(403).json({ jsonrpc: "2.0", error: { code: -32001, message: "This session belongs to another sign-in." }, id: null });
+              return;
+            }
+          }
         }
         await transport.handleRequest(req, res, req.body);
       } catch (err) {
@@ -426,9 +449,45 @@ export class MCPInstance {
     const bearer = requireBearerAuth({ verifier: provider, resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpUrl) });
     const whenOAuth = (h: RequestHandler): RequestHandler => (req: Request, res: Response, next: NextFunction) =>
       this.current().identity === "oauth" ? h(req, res, next) : next();
+    // Sign-in is asked for only when a tool runs. Connecting, listing tools and reading app
+    // resources need no token, so opening Claude doesn't pop a browser. A token that is sent
+    // is used when valid; an invalid one (e.g. after a gateway restart) only matters for a tool call.
+    const lazyBearer: RequestHandler = async (req, res, next) => {
+      const messages = Array.isArray(req.body) ? req.body : [req.body];
+      const callsTool = req.method === "POST" && messages.some((m: any) => m?.method === "tools/call");
+      const header = req.headers["authorization"];
+      if (!callsTool) {
+        const m = typeof header === "string" ? /^Bearer\s+(.+)$/i.exec(header) : null;
+        if (m) {
+          try {
+            req.auth = await provider.verifyAccessToken(m[1]!);
+          } catch {
+            /* signed-out view until a tool is called */
+          }
+        }
+        next();
+        return;
+      }
+      // Right after a failed sign-in, report why instead of opening another sign-in tab.
+      const failure = broker.recentFailure(this.config.id);
+      if (failure) {
+        const m = typeof header === "string" ? /^Bearer\s+(.+)$/i.exec(header) : null;
+        const valid = m ? await provider.verifyAccessToken(m[1]!).then(() => true, () => false) : false;
+        if (!valid) {
+          const reply = (msg: any) => ({
+            jsonrpc: "2.0",
+            id: msg?.id ?? null,
+            result: { content: [{ type: "text", text: `ServiceNow sign-in failed: ${failure} Fix it, then try again in a couple of minutes.` }], isError: true },
+          });
+          res.status(200).json(Array.isArray(req.body) ? messages.map(reply) : reply(req.body));
+          return;
+        }
+      }
+      bearer(req, res, next);
+    };
     this.app.use(whenOAuth(auth));
     this.app.use(whenOAuth(startRouter()));
-    this.app.use("/mcp", whenOAuth(bearer));
+    this.app.use("/mcp", whenOAuth(lazyBearer));
   }
 
   start(): Promise<void> {
