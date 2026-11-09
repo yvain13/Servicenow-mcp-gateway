@@ -16,7 +16,7 @@ const shots = process.argv[2];
 const dir = mkdtempSync(join(tmpdir(), "gw-e2e-"));
 process.env["STORE_FILE"] = join(dir, "store.json");
 process.env["AUDIT_LOG"] = join(dir, "audit.log");
-const real = JSON.parse(readFileSync("data/store.json", "utf8"));
+const real = JSON.parse(readFileSync("data/store.seed.json", "utf8"));
 const changeOps = real.servers.find((s: any) => s.name === "change-ops");
 const PORTS = { service: 47901, user: 47902, kit: 47903 };
 // No-code App Kit apps on a plain Table API server.

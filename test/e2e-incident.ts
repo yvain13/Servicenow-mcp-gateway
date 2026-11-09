@@ -35,7 +35,7 @@ for (const [name, element, value, label, dep] of [
 }
 
 const dir = mkdtempSync(join(tmpdir(), "gw-inc-"));
-const real = JSON.parse(readFileSync("data/store.json", "utf8"));
+const real = JSON.parse(readFileSync("data/store.seed.json", "utf8"));
 const MCP_PORT = 47911, MGMT_PORT = 47912;
 const incidentServer = { ...real.servers.find((s: any) => s.name === "incident-mcp"), port: MCP_PORT };
 writeFileSync(join(dir, "store.json"), JSON.stringify({ instance: null, servers: [incidentServer] }));

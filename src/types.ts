@@ -111,7 +111,3 @@ export interface Store {
   servers: MCPServer[];
 }
 
-export interface ServerStats {
-  callsToday: number;
-  avgLatencyMs: number;
-}

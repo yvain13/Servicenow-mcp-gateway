@@ -1,6 +1,5 @@
 import "dotenv/config";
 import express from "express";
-import cors from "cors";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { MCPManager } from "./mcp-manager.js";
@@ -36,7 +35,6 @@ async function main(): Promise<void> {
   );
 
   const app = express();
-  app.use(cors());
   app.use(express.json({ limit: "3mb" })); // uploaded HTML apps are up to 1.5 MB
 
   // Management REST API

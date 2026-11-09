@@ -12,11 +12,7 @@ export interface AuditEntry {
   ok: boolean;
 }
 
-let auditFile = process.env["AUDIT_LOG"] ?? join(DATA_DIR, "audit.log");
-
-export function setAuditFile(path: string): void {
-  auditFile = path;
-}
+const auditFile = process.env["AUDIT_LOG"] ?? join(DATA_DIR, "audit.log");
 
 // Append-only JSON-lines log of every write tool call. ServiceNow's own history stays
 // the system of record; this records what the gateway did on whose behalf.

@@ -14,16 +14,17 @@ Claude Code  ──────────────HTTP───────
                                                    ├─ Management UI (port 3001)
                                                    ├─ incident-mcp        (port 7801)
                                                    ├─ change-ops          (port 7820)  ← MCP Apps
-                                                   ├─ apps-demo           (port 7830)  ← MCP Apps sample
-                                                   ├─ cmdb-server         (port 7850)
-                                                   ├─ business-rule-mcp   (port 8110)
-                                                   ├─ script-include-mcp  (port 8120)
-                                                   └─ client-script-mcp   (port 8140)
+                                                   ├─ cmdb_server         (port 7850)
+                                                   ├─ server_mcp          (port 7890)
+                                                   ├─ business_rule_mcp   (port 8110)
+                                                   ├─ script_include_mcp  (port 8120)
+                                                   ├─ client_script_mcp   (port 8140)
+                                                   └─ problem-mcp-server  (port 8900)
 ```
 
 - **Management process** serves the web UI on `MANAGEMENT_PORT` (default `3001`) and a REST API at `/api`.
 - **Each MCP server** is its own Express app on its own port, mounting `POST/GET/DELETE /mcp` via the official MCP TypeScript SDK's `StreamableHTTPServerTransport`.
-- **Tools** are persisted to `data/store.json` (checked in — see [Bundled MCP servers](#bundled-mcp-servers)) and read live on every `tools/list` and `tools/call`, so adding or editing a tool takes effect immediately without restarting clients.
+- **Servers and tools** are saved in `data/store.json` (local, not tracked; it starts from `data/store.seed.json`) and read live on every `tools/list` and `tools/call`, so adding or editing a tool takes effect immediately without restarting clients.
 
 ## Quick start
 
@@ -41,7 +42,7 @@ npm run dev          # tsx watch — hot reload on file changes
 npm run build && npm start
 ```
 
-Open the management UI at <http://localhost:3001>. The repo ships with six MCP servers pre-configured (see [Bundled MCP servers](#bundled-mcp-servers)) — they auto-start on launch. From the UI you can:
+Open the management UI at <http://localhost:3001>. The repo ships with eight MCP servers pre-configured (see [Bundled MCP servers](#bundled-mcp-servers)) — they auto-start on launch. From the UI you can:
 
 1. Click **Connect Instance** and paste your ServiceNow URL, username, and password. The gateway tests the connection before saving.
 2. Browse the pre-bundled servers in the sidebar — click any tool to edit, or click **Add Tool** to extend a server.
@@ -50,17 +51,18 @@ Open the management UI at <http://localhost:3001>. The repo ships with six MCP s
 
 ## Bundled MCP servers
 
-These ship in `data/store.json` and start automatically. Tool definitions are live-editable from the UI.
+These ship in `data/store.seed.json`, which is copied to your local `data/store.json` on the first save, and start automatically. Tool definitions are live-editable from the UI.
 
 | Server | Port | Target table | Tools |
 |---|---|---|---|
 | `incident-mcp` | 7801 | `incident` | `get_incident`, `list_incidents`, `create_incident`, `update_incident` |
 | `change-ops` | 7820 | `change_request` | `get_change`, `create_change`, `update_change`, plus the change apps below |
-| `apps-demo` | 7830 | — | `open_hello`, `hello_echo` (Phase 1 sample app) |
-| `cmdb-server` | 7850 | `cmdb_ci` | `get_cmdb_ci` |
-| `business-rule-mcp` | 8110 | `sys_script` | `create_business_rule`, `list_business_rules`, `get_business_rule`, `update_business_rule` |
-| `script-include-mcp` | 8120 | `sys_script_include` | `create_script_include`, `list_script_includes`, `get_script_include`, `update_script_include` |
-| `client-script-mcp` | 8140 | `sys_script_client` | `create_client_script`, `list_client_scripts`, `get_client_script`, `update_client_script` |
+| `cmdb_server` | 7850 | `cmdb_ci` | `get_cmdb_ci` |
+| `server_mcp` | 7890 | `cmdb_ci_server` | `get_server_details`, `get_server_by_name` |
+| `business_rule_mcp` | 8110 | `sys_script` | `create_business_rule`, `list_business_rules`, `get_business_rule`, `update_business_rule` |
+| `script_include_mcp` | 8120 | `sys_script_include` | `create_script_include`, `list_script_includes`, `get_script_include`, `update_script_include` |
+| `client_script_mcp` | 8140 | `sys_script_client` | `create_client_script`, `list_client_scripts`, `get_client_script`, `update_client_script` |
+| `problem-mcp-server` | 8900 | `problem` | `get_problem`, `create_problem` |
 
 Convention across CRUD tools:
 - **`create_*`** — POST to the table collection URL; required fields go in the body.
@@ -266,13 +268,13 @@ The script does three things:
 2. Adds the lookup tools: `search_users`, `search_groups`, `search_services`, `search_service_offerings`, `search_cis` and `get_incident_choices`.
 3. Adds the app with an `open_incident_form` launcher.
 
-You can run it again safely; it updates in place. It goes through the management API, so it doesn't touch your local `data/store.json` edits. Restart Claude afterwards so it picks up the new tools.
+You can run it again safely; it updates in place. It goes through the management API, so it works on your existing setup. Restart Claude afterwards so it picks up the new tools.
 
 ### Building code apps
 
 Apps live under `apps/<name>/` (an `index.html` + TypeScript) and are built with Vite and `vite-plugin-singlefile` into one self-contained `apps/<name>/dist/index.html`. `apps/_shared/` holds the shell every app uses: host connection, theme, loading and error states, a confirm dialog, and `call(tool, args)`.
 
-To add an app: create `apps/<name>/`, add `{ uri, name, bundle }` to the server's `apps` in `data/store.json`, add a handler in `src/handlers/` and register it in `src/handlers/index.ts`, then link tools to the app from the UI (tool card → **App** and **Visible to**). The server's **Apps** tab shows each `ui://` resource, its bundle status and linked tools.
+To add an app: create `apps/<name>/`, add `{ uri, name, bundle }` to the server's `apps` in `data/store.json` (and in `data/store.seed.json` to ship it), add a handler in `src/handlers/` and register it in `src/handlers/index.ts`, then link tools to the app from the UI (tool card → **App** and **Visible to**). The server's **Apps** tab shows each `ui://` resource, its bundle status and linked tools.
 
 ## Wiring into Claude Desktop
 
@@ -358,7 +360,7 @@ src/
   mcp-instance.ts   # Express + StreamableHTTPServerTransport per MCP server (tools, ui:// resources)
   servicenow.ts     # REST client + tool dispatcher (Table API / Scripted REST)
   sn-client.ts      # ServiceNow client used by code-backed handlers
-  handlers/         # code-backed tools: demo.*, change.*, approvals.*, app.open
+  handlers/         # code-backed tools: change.*, approvals.*, app.open
   apps.ts           # ui:// resource HTML: built bundles, spec apps, uploaded HTML (+ App Kit)
   app-spec.ts       # no-code app validation, starter templates, Claude prompt
   app-spec-types.ts # the form / view / approval spec format
@@ -372,13 +374,16 @@ apps/
   _shared/          # app shell (connect, theme, confirm dialog, call helper)
   change-create/    # change form app
   change-approvals/ # approval inbox app
-  hello/            # Phase 1 sample app
-test/               # vitest suites + fake ServiceNow; e2e-host.ts drives the apps in Chromium
+examples/
+  incident-form.html # standard MCP App, installed by scripts/add-incident-app.mjs
+scripts/            # build-apps.mjs, add-incident-app.mjs
+test/               # vitest suites + fake ServiceNow; e2e-*.ts drive the apps in Chromium
 public/
   index.html        # single-file management UI
 data/
-  store.json        # persisted server + tool definitions (checked in)
-  apps/             # uploaded HTML apps
+  store.seed.json   # starter servers and tools (tracked)
+  store.json        # your servers, tools and apps (local, gitignored)
+  apps/             # uploaded HTML apps (local, gitignored)
 ```
 
 ## Scripts
@@ -396,7 +401,7 @@ data/
 ## Notes
 
 - Each MCP session gets its own SDK `Server` instance, because the SDK's `Protocol` class allows only one transport attachment per `Server`. Handlers read live from `storage`, so tool edits propagate to all sessions immediately.
-- `data/store.json` is checked in so the bundled server + tool catalog ships with the repo. Your `.env` (with the password) is gitignored.
+- `data/store.seed.json` ships the bundled servers and tools. Your own changes go to `data/store.json`, which is gitignored, so `git pull` never conflicts with them. `.env` (with the password) is gitignored too.
 - Authentication to ServiceNow is HTTP Basic auth using the credentials you configure. Use a least-privilege service account, not a personal admin login, for any non-toy use.
 
 ---

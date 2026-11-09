@@ -30,11 +30,11 @@ const store = {
       description: "",
       port: PORT,
       appsEnabled: true,
-      apps: [{ uri: "ui://apps-demo/hello", name: "Hello", bundle: "apps/hello/dist/index.html" }],
+      apps: [{ uri: "ui://change-ops/form", name: "Form", bundle: "apps/change-create/dist/index.html" }],
       tools: [
         { id: "t1", name: "get_change", description: "Get a change", method: "GET", endpoint: "/api/now/table/change_request", apiType: "table", parameters: [P("number", true, "query")] },
-        { id: "t2", name: "open_hello", description: "Open hello", method: "POST", endpoint: "", apiType: "scripted", parameters: [P("name")], kind: "handler", handler: "demo.open_hello", ui: { resourceUri: "ui://apps-demo/hello", visibility: ["model", "app"] } },
-        { id: "t3", name: "hello_echo", description: "Echo", method: "POST", endpoint: "", apiType: "scripted", parameters: [P("message", true)], kind: "handler", handler: "demo.echo", ui: { resourceUri: "ui://apps-demo/hello", visibility: ["app"] } },
+        { id: "t2", name: "open_form", description: "Open the form", method: "POST", endpoint: "", apiType: "scripted", parameters: [P("name")], kind: "handler", handler: "app.open", ui: { resourceUri: "ui://change-ops/form", visibility: ["model", "app"] } },
+        { id: "t3", name: "change_lookup", description: "Look up a change", method: "GET", endpoint: "/api/now/table/change_request", apiType: "table", parameters: [P("number", true, "query")], ui: { resourceUri: "ui://change-ops/form", visibility: ["app"] } },
         { id: "t4", name: "change_approval_decide", description: "Decide", method: "POST", endpoint: "", apiType: "scripted", parameters: [P("approval_sys_id", true), P("decision", true)], kind: "handler", handler: "approvals.decide", ui: { visibility: ["app"] } },
         { id: "t5", name: "update_change", description: "Update", method: "PATCH", endpoint: "/api/now/table/change_request/{sys_id}", apiType: "table", parameters: [P("work_notes", true), P("sys_id", true, "path")] },
       ],
@@ -57,7 +57,7 @@ const store = {
       port: LEGACY_PORT,
       tools: [
         { id: "l1", name: "get_change", description: "Get a change", method: "GET", endpoint: "/api/now/table/change_request", apiType: "table", parameters: [P("number", true, "query")] },
-        { id: "l2", name: "hello_echo", description: "Echo", method: "POST", endpoint: "", apiType: "scripted", parameters: [P("message", true)], kind: "handler", handler: "demo.echo", ui: { visibility: ["app"] } },
+        { id: "l2", name: "change_lookup", description: "Look up a change", method: "GET", endpoint: "/api/now/table/change_request", apiType: "table", parameters: [P("number", true, "query")], ui: { visibility: ["app"] } },
       ],
     },
   ],
@@ -97,9 +97,9 @@ describe("MCP Apps-capable client", () => {
     expect(c.getServerCapabilities()).toMatchObject({ tools: {}, resources: {} });
     const { resources } = await c.listResources();
     expect(resources).toEqual([
-      expect.objectContaining({ uri: "ui://apps-demo/hello", mimeType: "text/html;profile=mcp-app" }),
+      expect.objectContaining({ uri: "ui://change-ops/form", mimeType: "text/html;profile=mcp-app" }),
     ]);
-    const read = await c.readResource({ uri: "ui://apps-demo/hello" });
+    const read = await c.readResource({ uri: "ui://change-ops/form" });
     const content = read.contents[0] as any;
     expect(content.mimeType).toBe("text/html;profile=mcp-app");
     expect(content.text).toContain("<");
@@ -111,19 +111,19 @@ describe("MCP Apps-capable client", () => {
     const c = await connect(PORT, true);
     const { tools } = await c.listTools();
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
-    expect(byName["open_hello"]!._meta).toEqual({
-      ui: { resourceUri: "ui://apps-demo/hello", visibility: ["model", "app"] },
-      "ui/resourceUri": "ui://apps-demo/hello",
+    expect(byName["open_form"]!._meta).toEqual({
+      ui: { resourceUri: "ui://change-ops/form", visibility: ["model", "app"] },
+      "ui/resourceUri": "ui://change-ops/form",
     });
-    expect((byName["hello_echo"]!._meta as any).ui.visibility).toEqual(["app"]);
+    expect((byName["change_lookup"]!._meta as any).ui.visibility).toEqual(["app"]);
     expect(byName["get_change"]!._meta).toBeUndefined();
     await c.close();
   });
 
   it("app-only tools return structuredContent", async () => {
     const c = await connect(PORT, true);
-    const r = await c.callTool({ name: "hello_echo", arguments: { message: "abc" } });
-    expect(r.structuredContent).toMatchObject({ message: "abc", reversed: "cba" });
+    const r = await c.callTool({ name: "change_lookup", arguments: { number: "CHG0001" } });
+    expect((r.structuredContent as any).result[0]).toMatchObject({ number: "CHG0001" });
     await c.close();
   });
 
@@ -140,7 +140,7 @@ describe("Client without MCP Apps support", () => {
   it("hides app-only tools and _meta.ui, and has no resources", async () => {
     const c = await connect(PORT, false);
     const { tools } = await c.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["get_change", "open_hello", "update_change"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["get_change", "open_form", "update_change"]);
     expect(tools.every((t) => t._meta === undefined)).toBe(true);
     expect((await c.listResources()).resources).toEqual([]);
     await c.close();
@@ -148,7 +148,7 @@ describe("Client without MCP Apps support", () => {
 
   it("cannot call app-only tools", async () => {
     const c = await connect(PORT, false);
-    const r = await c.callTool({ name: "hello_echo", arguments: { message: "x" } });
+    const r = await c.callTool({ name: "change_lookup", arguments: { number: "CHG0001" } });
     expect(r.isError).toBe(true);
     expect((r.content as any)[0].text).toContain("only be called from its MCP App");
     await c.close();
@@ -156,8 +156,8 @@ describe("Client without MCP Apps support", () => {
 
   it("gets a text fallback from UI tools", async () => {
     const c = await connect(PORT, false);
-    const r = await c.callTool({ name: "open_hello", arguments: { name: "Ann" } });
-    expect((r.content as any)[0].text).toContain("text fallback");
+    const r = await c.callTool({ name: "open_form", arguments: { name: "Ann" } });
+    expect((r.content as any)[0].text).toContain("this client does not render MCP Apps");
     await c.close();
   });
 
