@@ -342,21 +342,48 @@ export function buildRouter(manager: MCPManager, getCreds: () => SNCredentials):
     res.json({ running: false });
   });
 
+  // Copy-ready client config for a server. ?identity= previews another mode without saving.
   r.get("/servers/:id/config-snippet", (req, res) => {
     const server = storage.getServer(req.params["id"]!);
     if (!server) { res.status(404).json({ error: "Not found" }); return; }
+    const q = String(req.query["identity"] ?? "");
+    const identity = (["service", "per-user", "oauth"].includes(q) ? q : server.identity ?? "service") as IdentityMode;
+    const url = `http://localhost:${server.port}/mcp`;
 
-    // per-user sends a Basic header; oauth signs in through the browser (mcp-remote opens it).
-    const entry: Record<string, unknown> = {
-      command: "npx",
-      args: ["-y", "mcp-remote@0.16.5", `http://localhost:${server.port}/mcp`],
-    };
-    if (server.identity === "per-user") {
-      entry["args"] = [...(entry["args"] as string[]), "--header", "Authorization:${SN_BASIC_AUTH}"];
-      entry["env"] = { SN_BASIC_AUTH: "Basic <base64 of username:password>" };
+    // Claude Desktop speaks stdio, so mcp-remote bridges to the gateway's HTTP endpoint.
+    const desktopEntry: Record<string, unknown> = { command: "npx", args: ["-y", "mcp-remote@0.16.5", url] };
+    // Claude Code speaks HTTP (and MCP OAuth) natively.
+    const codeEntry: Record<string, unknown> = { type: "http", url };
+    const cliName = /^[\w.-]+$/.test(server.name) ? server.name : `"${server.name.replace(/"/g, '\\"')}"`;
+    let claudeCode = `claude mcp add --transport http ${cliName} ${url}`;
+    const notes: string[] = [];
+
+    if (identity === "per-user") {
+      desktopEntry["args"] = [...(desktopEntry["args"] as string[]), "--header", "Authorization:${SN_BASIC_AUTH}"];
+      desktopEntry["env"] = { SN_BASIC_AUTH: "Basic <base64 of username:password>" };
+      codeEntry["headers"] = { Authorization: "Basic <base64 of username:password>" };
+      claudeCode += ` --header "Authorization: Basic <base64 of username:password>"`;
+      notes.push("Replace <base64 of username:password> with your own ServiceNow login, base64-encoded (e.g. echo -n 'user:pass' | base64). PDI demos only.");
+    } else if (identity === "oauth") {
+      const creds = oauth.listCredentials();
+      notes.push("No password in the config: the browser opens for ServiceNow sign-in the first time the client connects.");
+      notes.push(`ServiceNow's OAuth app must allow the redirect URL ${oauth.redirectUrl()}.`);
+      if (!creds.length) notes.push("No OAuth credential is saved yet: add one under OAuth sign-in, or users enter instance URL and client ID on the sign-in page.");
+    } else {
+      notes.push("Uses the gateway's service account from .env; no sign-in needed.");
     }
-    const snippet = { mcpServers: { [server.name]: entry } };
-    res.json({ snippet, json: JSON.stringify(snippet, null, 2) });
+
+    const snippet = { mcpServers: { [server.name]: desktopEntry } };
+    const codeJson = { mcpServers: { [server.name]: codeEntry } };
+    res.json({
+      identity,
+      saved: (server.identity ?? "service") === identity,
+      snippet,
+      json: JSON.stringify(snippet, null, 2),
+      claudeCode,
+      claudeCodeJson: JSON.stringify(codeJson, null, 2),
+      notes,
+    });
   });
 
   // ── Tools ────────────────────────────────────────────────────────────────────

@@ -491,20 +491,40 @@
 
 <!-- Config Snippet Modal -->
 <div class="scrim" id="snippetModal">
-  <div class="modal">
+  <div class="modal" style="max-width:680px">
     <div class="modal-head">
-      <div><h3>Config Snippet</h3><p>Paste this into your Claude Desktop or Claude Code config.</p></div>
+      <div><h3>Connect a client</h3><p>Choose how users sign in, then copy the config for <b id="snip_server"></b>.</p></div>
       <button class="x" onclick="closeModal('snippetModal')">&times;</button>
     </div>
     <div class="modal-body">
       <div class="field">
-        <label>Claude Desktop — <code>claude_desktop_config.json</code></label>
-        <textarea id="snippetText" rows="10" style="font-family:var(--mono);font-size:12px" readonly></textarea>
+        <label>Sign-in <span class="hint">saved on the server</span></label>
+        <div class="seg" id="snipIdSeg">
+          <button data-val="service" onclick="setSnippetIdentity('service')">Service account</button>
+          <button data-val="oauth" onclick="setSnippetIdentity('oauth')">OAuth sign-in</button>
+          <button data-val="per-user" onclick="setSnippetIdentity('per-user')">Per-user login (demo)</button>
+        </div>
       </div>
+      <ul id="snip_notes" style="margin:0 0 14px 18px;font-size:12.5px;color:var(--ink-soft);line-height:1.6"></ul>
+      <div class="field">
+        <label style="display:flex;align-items:center">Claude Desktop <span class="hint">claude_desktop_config.json → mcpServers</span>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="copySnippet('snippetText','Claude Desktop config copied')">Copy</button></label>
+        <textarea id="snippetText" rows="11" style="font-family:var(--mono);font-size:12px" readonly></textarea>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center">Claude Code <span class="hint">terminal command</span>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="copySnippet('snippetCode','Command copied')">Copy</button></label>
+        <textarea id="snippetCode" rows="2" style="font-family:var(--mono);font-size:12px" readonly></textarea>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center">Claude Code <span class="hint">or .mcp.json in the project</span>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="copySnippet('snippetCodeJson','.mcp.json copied')">Copy</button></label>
+        <textarea id="snippetCodeJson" rows="6" style="font-family:var(--mono);font-size:12px" readonly></textarea>
+      </div>
+      <div id="snip_oauth" style="display:none;margin-bottom:6px"><button class="btn btn-ghost btn-sm" onclick="closeModal('snippetModal');openOAuth()">Manage OAuth credentials and redirect URL</button></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('snippetModal')">Close</button>
-      <button class="btn btn-primary" onclick="copySnippet()">Copy</button>
     </div>
   </div>
 </div>
@@ -1208,15 +1228,37 @@ function collectParams() {
 }
 
 // ── Config Snippet ────────────────────────────────────────────────────────────
+let snippetServerId = null;
+
 async function showSnippet(serverId) {
-  const r = await api('GET', `/servers/${serverId}/config-snippet`);
-  document.getElementById('snippetText').value = r.json || '';
+  snippetServerId = serverId;
+  await renderSnippet();
   openModal('snippetModal');
 }
 
-function copySnippet() {
-  navigator.clipboard.writeText(document.getElementById('snippetText').value);
-  toast('Copied to clipboard');
+async function renderSnippet() {
+  const r = await api('GET', `/servers/${snippetServerId}/config-snippet`);
+  const srv = servers.find(x => x.id === snippetServerId);
+  document.getElementById('snip_server').textContent = srv ? srv.name : '';
+  document.querySelectorAll('#snipIdSeg button').forEach(b => b.classList.toggle('on', b.dataset.val === r.identity));
+  document.getElementById('snippetText').value = r.json || '';
+  document.getElementById('snippetCode').value = r.claudeCode || '';
+  document.getElementById('snippetCodeJson').value = r.claudeCodeJson || '';
+  document.getElementById('snip_notes').innerHTML = (r.notes || []).map(n => `<li>${esc(n)}</li>`).join('');
+  document.getElementById('snip_oauth').style.display = r.identity === 'oauth' ? 'block' : 'none';
+}
+
+// Saves the identity on the server (same as the Identity selector on the server page).
+async function setSnippetIdentity(identity) {
+  const r = await api('PATCH', `/servers/${snippetServerId}`, { identity });
+  if (r.error) { toast(r.error); return; }
+  toast(identity === 'oauth' ? 'OAuth sign-in on: users sign in through the browser' : identity === 'per-user' ? 'Per-user login on' : 'Service account on');
+  await loadServers();
+  await renderSnippet();
+}
+
+function copySnippet(id, msg) {
+  navigator.clipboard.writeText(document.getElementById(id).value).then(() => toast(msg || 'Copied')).catch(() => toast('Copy blocked: select and copy manually'));
 }
 
 // ── Port preview ──────────────────────────────────────────────────────────────

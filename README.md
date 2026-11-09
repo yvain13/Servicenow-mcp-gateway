@@ -140,7 +140,7 @@ With identity **OAuth sign-in**, a server follows the [MCP authorization](https:
 
 **Files:** saved credentials (`data/oauth-credentials.json`, including any client secret) and registered MCP clients (`data/oauth-clients.json`) are gitignored. Registered clients are kept on disk so a client that cached its registration keeps working after a restart.
 
-In Claude Desktop, an OAuth server needs no header or password:
+The server page's **Config snippet** button opens **Connect a client**. Pick the sign-in mode there (Service account, OAuth sign-in or Per-user login; it's saved on the server) and copy the matching Claude Desktop config, Claude Code command or `.mcp.json`. In Claude Desktop, an OAuth server needs no header or password:
 
 ```json
 "change-ops": { "command": "npx", "args": ["-y", "mcp-remote@0.16.5", "http://localhost:7820/mcp"] }
