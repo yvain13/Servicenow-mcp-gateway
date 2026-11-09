@@ -29,25 +29,16 @@ Claude Code  ──────────────HTTP───────
 ## Quick start
 
 ```bash
-# 1. Install dependencies
+git clone https://github.com/yvain13/Servicenow-mcp-gateway.git
+cd Servicenow-mcp-gateway
 npm install
-
-# 2. Create your local env file
-cp .env.example .env
-# then edit .env with your ServiceNow instance + credentials
-
-# 3. Run the gateway
-npm run dev          # tsx watch — hot reload on file changes
-# or
-npm run build && npm start
+cp .env.example .env   # add your instance + credentials
+npm run dev
 ```
 
-Open the management UI at <http://localhost:3001>. The repo ships with eight MCP servers pre-configured (see [Bundled MCP servers](#bundled-mcp-servers)) — they auto-start on launch. From the UI you can:
+Open the gateway UI, pick a server, click **Config snippet** and paste the config into Claude.
 
-1. Click **Connect Instance** and paste your ServiceNow URL, username, and password. The gateway tests the connection before saving.
-2. Browse the pre-bundled servers in the sidebar — click any tool to edit, or click **Add Tool** to extend a server.
-3. Click **Create MCP Server** to spin up a new one on a fresh port.
-4. Click **Config snippet** on any server to get the JSON to paste into Claude Desktop / Claude Code.
+**Sign in as yourself (OAuth):** create an OAuth app in ServiceNow with the redirect URL shown under **OAuth sign-in** and tick **Public Client**. Then add your instance URL and Client ID under **OAuth sign-in**. The browser opens to log in the first time you run a tool. [Details](#oauth-sign-in)
 
 ## Bundled MCP servers
 
