@@ -1,6 +1,4 @@
-# snow-mcp-gateway
-
-> Built by **[@AIbyTusharM](https://www.youtube.com/@AIbyTusharM)** — subscribe for more such tools, learning and walkthroughs.
+# servicenow-mcp-gateway
 
 A local gateway that turns ServiceNow REST APIs into MCP (Model Context Protocol) tools, so they can be used by Claude Desktop, Claude Code, or any MCP-compatible client.
 
@@ -9,7 +7,7 @@ You point the gateway at a ServiceNow instance, declare tools in a web UI (each 
 ## Architecture
 
 ```
-Claude Desktop ──stdio──▶ mcp-remote ──HTTP──▶ snow-mcp-gateway ──REST──▶ ServiceNow
+Claude Desktop ──stdio──▶ mcp-remote ──HTTP──▶ servicenow-mcp-gateway ──REST──▶ ServiceNow
 Claude Code  ──────────────HTTP────────────▶       │
                                                    ├─ Management UI (port 3001)
                                                    ├─ incident-mcp        (port 7801)
@@ -27,6 +25,16 @@ Claude Code  ──────────────HTTP───────
 - **Servers and tools** are saved in `data/store.json` (local, not tracked; it starts from `data/store.seed.json`) and read live on every `tools/list` and `tools/call`, so adding or editing a tool takes effect immediately without restarting clients.
 
 ## Quick start
+
+Run it straight from npm (Node 20+):
+
+```bash
+SN_INSTANCE_URL=https://devXXXXXX.service-now.com SN_USERNAME=... SN_PASSWORD=... npx servicenow-mcp-gateway
+```
+
+Or install it globally with `npm install -g servicenow-mcp-gateway` and run `servicenow-mcp-gateway`. Your servers, tools, OAuth files and audit log are kept in `~/.servicenow-mcp-gateway` (change it with `--data-dir <path>` or `SERVICENOW_MCP_DATA_DIR`). Instead of env vars you can put a `.env` in the current directory or in the data directory, or set the instance later in the UI. `npx servicenow-mcp-gateway --help` lists the options.
+
+From source:
 
 ```bash
 git clone https://github.com/yvain13/Servicenow-mcp-gateway.git
@@ -334,7 +342,8 @@ Run `claude mcp list` to verify, or `/mcp` inside an interactive session for liv
 | `MCP_HOST` | no (default all interfaces) | Bind address for the MCP server ports |
 | `MCP_APPS_ASSUME_SUPPORT` | no | `1` treats every client as MCP Apps-capable |
 | `WRITE_RATE_LIMIT` | no (default `30`) | Write tool calls per session per minute |
-| `AUDIT_LOG` | no (default `data/audit.log`) | Audit log path |
+| `SERVICENOW_MCP_DATA_DIR` | no (default `data/` from source, `~/.servicenow-mcp-gateway` via npx) | Where the store, OAuth files, uploaded apps and audit log are written |
+| `AUDIT_LOG` | no (default `<data dir>/audit.log`) | Audit log path |
 | `SN_INSTANCE_URL` | yes | e.g. `https://devXXXXXX.service-now.com` |
 | `SN_USERNAME` | yes | ServiceNow user the gateway calls as |
 | `SN_PASSWORD` | yes | Password for that user |
@@ -367,6 +376,7 @@ apps/
   change-approvals/ # approval inbox app
 examples/
   incident-form.html # standard MCP App, installed by scripts/add-incident-app.mjs
+bin/cli.js          # npx / global CLI entry: sets the data directory, loads .env, starts dist/
 scripts/            # build-apps.mjs, add-incident-app.mjs
 test/               # vitest suites + fake ServiceNow; e2e-*.ts drive the apps in Chromium
 public/
@@ -388,6 +398,7 @@ data/
 | `npm run test:e2e` | Drive the app bundles in headless Chromium through a minimal host (needs Playwright) |
 | `npx tsx test/e2e-incident.ts` | Install the incident form with its script and drive it in headless Chromium |
 | `npm start` | Run the compiled output |
+| `npm pack --dry-run` | List what would be published to npm (`prepublishOnly` runs the build) |
 
 ## Notes
 

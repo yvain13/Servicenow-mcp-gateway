@@ -1,19 +1,18 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
-import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
 import type { Store, MCPServer, Tool, InstanceConfig } from "./types.js";
+import { DATA_DIR, SEED_DIR } from "./paths.js";
 
-const __dir = dirname(fileURLToPath(import.meta.url));
 // STORE_FILE overrides the location (used by tests).
-const DATA_FILE = process.env["STORE_FILE"] ?? join(__dir, "../data/store.json");
+const DATA_FILE = process.env["STORE_FILE"] ?? join(DATA_DIR, "store.json");
 
 // Uploaded HTML apps live next to the store: <store dir>/apps/<serverId>/<slug>.html
 export const STORE_DIR = dirname(DATA_FILE);
 export const APPS_DATA_DIR = join(STORE_DIR, "apps");
 
 // Starter servers, used until the first save creates data/store.json (which is not tracked).
-const SEED_FILE = join(__dir, "../data/store.seed.json");
+const SEED_FILE = join(SEED_DIR, "store.seed.json");
 const EMPTY: Store = { instance: null, servers: [] };
 
 function read(): Store {
@@ -29,6 +28,7 @@ function read(): Store {
 }
 
 function write(store: Store): void {
+  mkdirSync(STORE_DIR, { recursive: true });
   writeFileSync(DATA_FILE, JSON.stringify(store, null, 2));
 }
 

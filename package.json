@@ -1,9 +1,39 @@
 {
-  "name": "snow-mcp-gateway",
+  "name": "servicenow-mcp-gateway",
   "version": "0.1.0",
   "description": "Local gateway that turns ServiceNow REST APIs into MCP tools",
   "type": "module",
-  "main": "dist/index.js",
+  "bin": {
+    "servicenow-mcp-gateway": "bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "public/",
+    "data/store.seed.json",
+    "apps/_kit/dist/*.js",
+    "apps/*/dist/index.html",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "servicenow",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "gateway",
+    "mcp-server"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yvain13/Servicenow-mcp-gateway.git"
+  },
+  "homepage": "https://github.com/yvain13/Servicenow-mcp-gateway#readme",
+  "bugs": {
+    "url": "https://github.com/yvain13/Servicenow-mcp-gateway/issues"
+  },
   "scripts": {
     "dev": "npm run build:apps && (node scripts/build-apps.mjs --watch & tsx watch src/index.ts)",
     "build:apps": "node scripts/build-apps.mjs",
@@ -11,7 +41,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p apps",
     "test": "vitest run",
-    "test:e2e": "tsx test/e2e-host.ts"
+    "test:e2e": "tsx test/e2e-host.ts",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "~1.7.5",
