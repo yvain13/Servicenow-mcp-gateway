@@ -1,5 +1,7 @@
 # servicenow-mcp-gateway
 
+**[Visual tour and agent setup skill →](https://yvain13.github.io/Servicenow-mcp-gateway/)**
+
 A local gateway that turns ServiceNow REST APIs into MCP (Model Context Protocol) tools, so they can be used by Claude Desktop, Claude Code, or any MCP-compatible client.
 
 You point the gateway at a ServiceNow instance, declare tools in a web UI (each tool wraps a Table API or Scripted REST endpoint), and the gateway exposes them as MCP servers over **Streamable HTTP**. Each MCP server runs on its own port and can be hot-edited without restarting clients.
