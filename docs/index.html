@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ServiceNow MCP Gateway</title>
+<meta name="description" content="A local gateway that turns ServiceNow REST APIs into MCP tools for Claude and other MCP clients. Run it with npx servicenow-mcp-gateway.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%231B5E3F'/%3E%3Cpath d='M12 4 6 7v4.5c0 3.8 2.6 6 6 7.5 3.4-1.5 6-3.7 6-7.5V7z' fill='none' stroke='white' stroke-width='1.8'/%3E%3Cpath d='m9.5 11.5 1.8 1.8 3.4-3.4' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --canopy:#1B5E3F;--canopy-deep:#143F2C;--canopy-bright:#2E8B57;
+    --canopy-soft:#E4EFE6;--line:#E6E1D6;--oat:#F7F4ED;--paper:#FFFFFF;
+    --ink:#16201A;--ink-soft:#516056;--ink-faint:#8A988E;--code-bg:#F1EDE3;
+    --marker:#E8590C;--marker-ink:#fff;
+    --shadow:0 1px 2px rgba(20,40,28,.05),0 18px 40px -24px rgba(20,40,28,.35);
+    --mono:'IBM Plex Mono',ui-monospace,monospace;--sans:'IBM Plex Sans',system-ui,sans-serif;
+    --display:'Bricolage Grotesque',system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --canopy:#5BD08C;--canopy-deep:#0E2A1D;--canopy-bright:#5BD08C;
+      --canopy-soft:#173326;--line:#2A3A30;--oat:#101813;--paper:#16211A;
+      --ink:#E6EEE8;--ink-soft:#A9BBAE;--ink-faint:#71857A;--code-bg:#0B120E;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 18px 40px -24px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --canopy:#5BD08C;--canopy-deep:#0E2A1D;--canopy-bright:#5BD08C;
+    --canopy-soft:#173326;--line:#2A3A30;--oat:#101813;--paper:#16211A;
+    --ink:#E6EEE8;--ink-soft:#A9BBAE;--ink-faint:#71857A;--code-bg:#0B120E;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 18px 40px -24px rgba(0,0,0,.7);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--sans);background:var(--oat);color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:var(--canopy)}
+  code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.1em .38em;border-radius:5px}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+
+  /* Hero */
+  header.hero{background:#143F2C;color:#E4EFE6;padding:28px 0 0}
+  .top{display:flex;align-items:center;gap:12px}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(140deg,#2E8B57,#1B5E3F);display:grid;place-items:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);flex-shrink:0}
+  .top .name{font-family:var(--display);font-weight:700;font-size:16px;color:#fff}
+  .top nav{margin-left:auto;display:flex;gap:18px;font-size:14px}
+  .top nav a{color:#B9D6C2;text-decoration:none}
+  .top nav a:hover{color:#fff}
+  .hero-body{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:end;padding:56px 0 44px}
+  .hero h1{font-family:var(--display);font-weight:800;font-size:clamp(34px,5vw,56px);line-height:1.02;letter-spacing:-.025em;color:#fff}
+  .hero h1 em{font-style:normal;color:#5BD08C}
+  .hero p.lede{margin-top:18px;font-size:18px;color:#B9D6C2;max-width:560px}
+  .cmd{display:flex;align-items:center;gap:10px;background:#0B241A;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px 14px 14px 18px;font-family:var(--mono);font-size:16px;color:#fff}
+  .cmd .p{color:#5BD08C;user-select:none}
+  .cmd span.t{flex:1;overflow-x:auto;white-space:nowrap}
+  .btn{font:600 13px var(--sans);border-radius:8px;padding:8px 13px;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  .btn-light{background:#fff;color:#143F2C}
+  .btn-light:hover{background:#E4EFE6}
+  .btn-line{background:transparent;color:var(--ink);border-color:var(--line)}
+  .btn-line:hover{border-color:var(--canopy);color:var(--canopy)}
+  .btn-solid{background:var(--canopy);color:#fff}
+  :root[data-theme="dark"] .btn-solid{color:#0B120E}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn-solid{color:#0B120E}}
+  .cmd-note{margin-top:10px;font-size:13.5px;color:#8FB89C}
+  .facts{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:22px;font-size:13.5px;color:#B9D6C2}
+  .facts b{color:#fff;font-weight:600}
+
+  /* Tabs */
+  .tabbar{display:flex;gap:4px}
+  .tabbar button{font:600 15px var(--sans);color:#B9D6C2;background:transparent;border:0;padding:13px 20px;border-radius:10px 10px 0 0;cursor:pointer}
+  .tabbar button:hover{color:#fff}
+  .tabbar button[aria-selected="true"]{background:var(--oat);color:var(--ink)}
+  [role="tabpanel"][hidden]{display:none}
+  main{padding:44px 0 72px}
+
+  /* Flow strip */
+  .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:48px}
+  .flow div{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px 16px 14px}
+  .flow b{display:block;font-family:var(--display);font-size:17px;margin-bottom:2px}
+  .flow span{font-size:14px;color:var(--ink-soft)}
+  .flow i{font-style:normal;font:500 11px var(--mono);color:var(--canopy);letter-spacing:.08em;text-transform:uppercase}
+
+  /* Shot sections */
+  section.shot{margin-bottom:64px}
+  .shot-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px}
+  .shot-head .n{font:500 13px var(--mono);color:var(--canopy)}
+  .shot h2{font-family:var(--display);font-size:clamp(24px,3vw,32px);letter-spacing:-.015em;line-height:1.15}
+  .shot .intro{color:var(--ink-soft);max-width:760px;margin-bottom:20px;font-size:16px}
+  .shot-grid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:28px;align-items:start}
+  .frame{position:relative;border-radius:12px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line);background:#F7F4ED}
+  .frame img{display:block;width:100%;height:auto}
+  .pin{position:absolute;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:var(--marker);color:var(--marker-ink);font:700 13px var(--sans);display:grid;place-items:center;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer;transition:transform .15s}
+  .pin:hover,.pin.on{transform:translate(-50%,-50%) scale(1.22)}
+  ol.notes{list-style:none;display:flex;flex-direction:column;gap:10px;position:sticky;top:16px}
+  ol.notes li{display:grid;grid-template-columns:26px 1fr;gap:10px;padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:11px;font-size:14.5px;color:var(--ink-soft);transition:border-color .15s,background .15s}
+  ol.notes li.on{border-color:var(--marker)}
+  ol.notes li .k{width:24px;height:24px;border-radius:50%;background:var(--marker);color:#fff;font:700 12px var(--sans);display:grid;place-items:center;margin-top:1px}
+  ol.notes li b{color:var(--ink);font-weight:600;display:block}
+
+  /* Quick start / skill */
+  .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .card{min-width:0;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .card h3{font-family:var(--display);font-size:18px;margin-bottom:6px}
+  .card p{font-size:14.5px;color:var(--ink-soft)}
+  pre{font-family:var(--mono);font-size:13px;line-height:1.6;background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;color:var(--ink);margin-top:10px;white-space:pre}
+  h2.sec{font-family:var(--display);font-size:clamp(24px,3vw,32px);letter-spacing:-.015em;margin-bottom:8px}
+  .sub{color:var(--ink-soft);max-width:760px;margin-bottom:22px;font-size:16px}
+  .skill-grid{display:grid;grid-template-columns:330px minmax(0,1fr);gap:28px;align-items:start}
+  .steps{list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:12px}
+  .steps li{counter-increment:s;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px 16px 14px 52px;position:relative;font-size:14.5px;color:var(--ink-soft)}
+  .steps li::before{content:counter(s);position:absolute;left:14px;top:13px;width:26px;height:26px;border-radius:50%;background:var(--canopy);color:var(--paper);font:700 13px var(--sans);display:grid;place-items:center}
+  .steps li b{color:var(--ink)}
+  .steps pre{font-size:12px;white-space:pre-wrap;word-break:break-all}
+  .skillbox{background:var(--paper);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+  .skillbar{display:flex;align-items:center;gap:8px;padding:10px 12px 10px 16px;border-bottom:1px solid var(--line)}
+  .skillbar .f{font:500 13px var(--mono);color:var(--ink-soft);margin-right:auto}
+  .skillbox pre{margin:0;border:0;border-radius:0;max-height:640px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:var(--paper)}
+  footer{border-top:1px solid var(--line);padding:24px 0 36px;color:var(--ink-faint);font-size:14px}
+  footer .wrap{display:flex;flex-wrap:wrap;gap:8px 20px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#143F2C;color:#fff;padding:10px 16px;border-radius:9px;font-size:14px;opacity:0;transition:.2s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  @media (max-width:960px){
+    .hero-body,.shot-grid,.skill-grid{grid-template-columns:1fr}
+    .hero-body{gap:28px;padding:40px 0 32px}
+    ol.notes{position:static}
+    .flow,.cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  }
+  @media (max-width:560px){
+    .flow,.cards{grid-template-columns:minmax(0,1fr)}
+    .top nav a.hide-sm{display:none}
+    .cmd{font-size:14px}
+    .pin{width:22px;height:22px;font-size:11px}
+    .tabbar button{padding:12px 14px}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="top">
+      <div class="logo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
+      <span class="name">servicenow-mcp-gateway</span>
+      <nav>
+        <a class="hide-sm" href="https://www.npmjs.com/package/servicenow-mcp-gateway">npm</a>
+        <a href="https://github.com/yvain13/Servicenow-mcp-gateway">GitHub</a>
+      </nav>
+    </div>
+
+    <div class="hero-body">
+      <div>
+        <h1>Your ServiceNow,<br>as <em>MCP tools</em> for Claude.</h1>
+        <p class="lede">A local gateway that wraps ServiceNow REST APIs as MCP tools. Point it at your instance, pick or build tools in a web UI, and connect Claude Desktop, Claude Code or any MCP client.</p>
+      </div>
+      <div>
+        <div class="cmd"><span class="p">$</span><span class="t" id="npxCmd">npx servicenow-mcp-gateway</span><button class="btn btn-light" data-copy="npxCmd">Copy</button></div>
+        <p class="cmd-note">Needs Node 20+. Opens the UI at <code style="background:#0B241A;color:#fff">localhost:3001</code>. Settings live in <code style="background:#0B241A;color:#fff">~/.servicenow-mcp-gateway</code>.</p>
+        <div class="facts"><span><b>8</b> ready-made servers</span><span><b>30+</b> tools</span><span><b>Live</b> edits, no client restart</span></div>
+      </div>
+    </div>
+
+    <div class="tabbar" role="tablist">
+      <button role="tab" id="tab-tour" aria-controls="panel-tour" aria-selected="true">Tour</button>
+      <button role="tab" id="tab-skill" aria-controls="panel-skill" aria-selected="false">Agent skill</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ─────────────── Tour ─────────────── -->
+  <div role="tabpanel" id="panel-tour" aria-labelledby="tab-tour">
+
+    <div class="flow">
+      <div><i>1 · run</i><b>npx</b><span>Start the gateway with one command.</span></div>
+      <div><i>2 · connect</i><b>Your instance</b><span>Instance URL plus a service account, or OAuth.</span></div>
+      <div><i>3 · shape</i><b>Servers &amp; tools</b><span>Use the 8 bundled servers or add your own.</span></div>
+      <div><i>4 · use</i><b>Claude</b><span>Paste the config. Ask Claude to work in ServiceNow.</span></div>
+    </div>
+
+    <section class="shot" data-shot>
+      <div class="shot-head"><span class="n">01</span><h2>Servers and tools</h2></div>
+      <p class="intro">Each MCP server is a group of tools on its own port. Every tool is a ServiceNow API with a name, description and parameters, which is what the model sees.</p>
+      <div class="shot-grid">
+        <div class="frame">
+          <img src="img/servers-and-tools.png" width="2880" height="1800" alt="Gateway UI showing the change-ops server with its endpoint URL, identity setting and list of tools">
+          <button class="pin" style="left:17.6%;top:31%" data-n="1">1</button>
+          <button class="pin" style="left:91.2%;top:22.9%" data-n="2">2</button>
+          <button class="pin" style="left:53.5%;top:35.9%" data-n="3">3</button>
+          <button class="pin" style="left:80%;top:51.3%" data-n="4">4</button>
+          <button class="pin" style="left:86.7%;top:10%" data-n="5">5</button>
+          <button class="pin" style="left:17.6%;top:68.3%" data-n="6">6</button>
+        </div>
+        <ol class="notes">
+          <li data-n="1"><span class="k">1</span><div><b>One server per job</b>Incidents, changes, CMDB, business rules, script includes, client scripts, problems. All start automatically, each on its own port.</div></li>
+          <li data-n="2"><span class="k">2</span><div><b>Endpoint and config</b>Copy the MCP URL, or open <em>Config snippet</em> for ready-to-paste client config.</div></li>
+          <li data-n="3"><span class="k">3</span><div><b>Who ServiceNow sees</b>Run tools as a service account, or have each user sign in with OAuth. Toggle MCP Apps (interactive UIs) per server.</div></li>
+          <li data-n="4"><span class="k">4</span><div><b>Tools</b>Wrap the Table API, a Scripted REST endpoint or a built-in code handler. Edit and Claude sees the change on its next call.</div></li>
+          <li data-n="5"><span class="k">5</span><div><b>Add your own</b>New tools and new servers in a couple of clicks. Writes are rate-limited and audit-logged.</div></li>
+          <li data-n="6"><span class="k">6</span><div><b>Instance &amp; OAuth</b>Connect your instance and manage OAuth sign-in from the sidebar.</div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="shot" data-shot>
+      <div class="shot-head"><span class="n">02</span><h2>Apps inside the chat</h2></div>
+      <p class="intro">MCP Apps show a real form, table or approval card in Claude instead of plain text. Build one without code, or attach your own HTML.</p>
+      <div class="shot-grid">
+        <div class="frame">
+          <img src="img/app-builder.png" width="2880" height="1800" alt="New app builder with type picker, spec editor and a live preview of an incident form">
+          <button class="pin" style="left:37.5%;top:28%" data-n="1">1</button>
+          <button class="pin" style="left:25.5%;top:43.5%" data-n="2">2</button>
+          <button class="pin" style="left:46%;top:62%" data-n="3">3</button>
+          <button class="pin" style="left:87%;top:44.5%" data-n="4">4</button>
+          <button class="pin" style="left:48.5%;top:89.7%" data-n="5">5</button>
+        </div>
+        <ol class="notes">
+          <li data-n="1"><span class="k">1</span><div><b>Pick a type</b>Form, table / chart, approval cards, or your own HTML file.</div></li>
+          <li data-n="2"><span class="k">2</span><div><b>Describe it</b>Write what you want and copy a ready prompt for Claude. It writes the spec for you.</div></li>
+          <li data-n="3"><span class="k">3</span><div><b>Spec, not code</b>A short JSON spec, checked against this server's tools before it saves.</div></li>
+          <li data-n="4"><span class="k">4</span><div><b>Live preview</b>Reads hit your instance, writes are a dry run, so you can test safely.</div></li>
+          <li data-n="5"><span class="k">5</span><div><b>Opened by a tool</b>Claude calls this tool to show the app. Change forms and approval inboxes ship built in.</div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="shot" data-shot>
+      <div class="shot-head"><span class="n">03</span><h2>Connect a client</h2></div>
+      <p class="intro">Every server gives you copy-paste config for Claude Desktop and Claude Code. Any other MCP client just needs the URL.</p>
+      <div class="shot-grid">
+        <div class="frame">
+          <img src="img/connect-client.png" width="2880" height="1800" alt="Connect a client dialog with sign-in choice and config for Claude Desktop and Claude Code">
+          <button class="pin" style="left:55.8%;top:19.3%" data-n="1">1</button>
+          <button class="pin" style="left:73%;top:41.5%" data-n="2">2</button>
+          <button class="pin" style="left:68.5%;top:60.5%" data-n="3">3</button>
+          <button class="pin" style="left:55%;top:76.5%" data-n="4">4</button>
+        </div>
+        <ol class="notes">
+          <li data-n="1"><span class="k">1</span><div><b>Choose sign-in</b>Service account (simplest), OAuth sign-in through the browser, or per-user login for demos.</div></li>
+          <li data-n="2"><span class="k">2</span><div><b>Claude Desktop</b>Paste into <code>claude_desktop_config.json</code>. It bridges through <code>mcp-remote</code>.</div></li>
+          <li data-n="3"><span class="k">3</span><div><b>Claude Code</b>One <code>claude mcp add</code> command…</div></li>
+          <li data-n="4"><span class="k">4</span><div><b>…or a project file</b>Commit <code>.mcp.json</code> so the whole team gets the server.</div></li>
+        </ol>
+      </div>
+    </section>
+
+    <h2 class="sec">Get started</h2>
+    <p class="sub">Pick whichever fits. Or hand the <a href="#skill" data-goto="skill">agent skill</a> to Claude and let it do the setup.</p>
+    <div class="cards">
+      <div class="card"><h3>Run with npx</h3><p>Nothing to install. Pass your instance in env vars, or enter it later in the UI.</p>
+<pre>SN_INSTANCE_URL=https://devXXXXX.service-now.com \
+SN_USERNAME=... SN_PASSWORD=... \
+npx servicenow-mcp-gateway</pre></div>
+      <div class="card"><h3>Install globally</h3><p>Keep a <code>.env</code> in <code>~/.servicenow-mcp-gateway</code> and run it any time.</p>
+<pre>npm install -g servicenow-mcp-gateway
+servicenow-mcp-gateway</pre></div>
+      <div class="card"><h3>From source</h3><p>To change the code or contribute.</p>
+<pre>git clone https://github.com/yvain13/Servicenow-mcp-gateway.git
+cd Servicenow-mcp-gateway
+npm install && npm run dev</pre></div>
+    </div>
+  </div>
+
+  <!-- ─────────────── Agent skill ─────────────── -->
+  <div role="tabpanel" id="panel-skill" aria-labelledby="tab-skill" hidden>
+    <h2 class="sec">Let your agent set it up</h2>
+    <p class="sub">Give this skill to Claude Code (or any coding agent). It installs and starts the gateway, connects your instance, registers the MCP servers with your client, and hands you back their names and URLs.</p>
+
+    <div class="skill-grid">
+      <ol class="steps">
+        <li><b>Install the skill.</b> For Claude Code, save it as a personal skill:
+<pre id="skillInstall">mkdir -p ~/.claude/skills/servicenow-mcp-gateway && curl -fsSL https://yvain13.github.io/Servicenow-mcp-gateway/SKILL.md -o ~/.claude/skills/servicenow-mcp-gateway/SKILL.md</pre>
+          <button class="btn btn-line" data-copy="skillInstall" style="margin-top:8px">Copy command</button></li>
+        <li><b>Or just paste it.</b> Copy the file on the right and paste it into any agent's chat.</li>
+        <li><b>Ask.</b> “Set up the ServiceNow MCP gateway for my instance.”</li>
+        <li><b>Answer one question.</b> The agent asks for your instance URL and login, then does the rest.</li>
+        <li><b>Done.</b> You get the UI link and a table of MCP servers, already added to Claude.</li>
+      </ol>
+
+      <div class="skillbox">
+        <div class="skillbar">
+          <span class="f">SKILL.md</span>
+          <button class="btn btn-line" id="dlSkill">Download</button>
+          <button class="btn btn-solid" data-copy="skillText">Copy</button>
+        </div>
+        <pre id="skillText">Loading SKILL.md…</pre>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>servicenow-mcp-gateway · open source on <a href="https://github.com/yvain13/Servicenow-mcp-gateway">GitHub</a></span>
+    <span>Not affiliated with ServiceNow, Inc.</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // Tabs (also reachable via #tour / #skill)
+  const tabs = { tour: document.getElementById('tab-tour'), skill: document.getElementById('tab-skill') };
+  function show(name, push) {
+    for (const [k, t] of Object.entries(tabs)) {
+      const on = k === name;
+      t.setAttribute('aria-selected', on);
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    }
+    if (push) history.replaceState(null, '', name === 'tour' ? location.pathname : '#' + name);
+  }
+  tabs.tour.onclick = () => show('tour', true);
+  tabs.skill.onclick = () => show('skill', true);
+  document.querySelectorAll('[data-goto]').forEach(a => a.onclick = e => { e.preventDefault(); show(a.dataset.goto, true); window.scrollTo({ top: 0 }); });
+  if (location.hash === '#skill') show('skill');
+
+  // Pins ↔ notes highlight
+  document.querySelectorAll('[data-shot]').forEach(sec => {
+    const set = (n) => sec.querySelectorAll('[data-n]').forEach(el => el.classList.toggle('on', el.dataset.n === n));
+    sec.querySelectorAll('[data-n]').forEach(el => {
+      el.addEventListener('mouseenter', () => set(el.dataset.n));
+      el.addEventListener('mouseleave', () => set(null));
+      el.addEventListener('click', () => set(el.dataset.n));
+    });
+  });
+
+  // Copy / toast
+  const toast = (m) => { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 1600); };
+  document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => {
+    const text = document.getElementById(b.dataset.copy).textContent;
+    navigator.clipboard.writeText(text).then(() => toast('Copied'), () => toast('Select and copy manually'));
+  });
+
+  // SKILL.md
+  let skill = '';
+  fetch('SKILL.md').then(r => r.ok ? r.text() : Promise.reject()).then(t => {
+    skill = t; document.getElementById('skillText').textContent = t;
+  }).catch(() => {
+    document.getElementById('skillText').textContent = 'Could not load SKILL.md. Open it on GitHub: https://github.com/yvain13/Servicenow-mcp-gateway/blob/main/docs/SKILL.md';
+  });
+  document.getElementById('dlSkill').onclick = () => {
+    if (!skill) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([skill], { type: 'text/markdown' }));
+    a.download = 'SKILL.md'; a.click(); URL.revokeObjectURL(a.href);
+  };
+</script>
+</body>
+</html>
