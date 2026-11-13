@@ -11,19 +11,26 @@
 
 <h1 align="center">ServiceNow MCP Gateway</h1>
 
-<p align="center"><b>Connect Claude, Cursor, Copilot, Gemini CLI, or any MCP client to ServiceNow, with tools you define yourself.</b></p>
+<p align="center"><b>Turn any ServiceNow Table API or Scripted REST API into an MCP tool in a minute, and show real ServiceNow forms right inside the chat.</b></p>
+
+<p align="center">Works with Claude, Cursor, Copilot, Gemini CLI, or any MCP client.</p>
 
 <p align="center"><a href="https://yvain13.github.io/Servicenow-mcp-gateway/"><b>Full tour, guides and agent setup skill →</b></a></p>
 
-A local gateway that wraps ServiceNow REST APIs as MCP tools. Point it at your instance, pick or build tools in a web UI, and connect your AI client. Tool edits reach connected clients immediately, no restart.
+## How it works
+
+1. **Point it at your instance.** One `npx` command starts the gateway and its web UI.
+2. **Turn an API into a tool.** Pick a table (`incident`, `change_request`, any custom table) or paste a Scripted REST endpoint, name the tool and its parameters. No code.
+3. **Connect your AI.** Copy the config snippet into Claude or any MCP client. The tool is live, and later edits reach the client without a restart.
+4. **Show forms in the chat.** Attach a form to a server and the AI opens it in the conversation, prefilled from what you said. Submitting it creates the record in ServiceNow.
 
 ## Features
 
-- **No-code tools** on any Table API or Scripted REST endpoint, edited live from a web UI.
-- **8 ready-made servers**: incidents, changes, problems, CMDB, servers, business rules, script includes, client scripts.
-- **MCP Apps**: interactive forms, tables and approval inboxes inside the chat, built from a JSON spec or one HTML file.
+- **Any API, as a tool:** Table API (get, list, create, update) and Scripted REST endpoints, built and edited live from the web UI.
+- **ServiceNow forms in the chat (MCP Apps):** incident and change forms with reference lookups and choice lists from your instance, plus approval inboxes. Build your own from a JSON spec or one HTML file.
+- **8 ready-made servers:** incidents, changes, problems, CMDB, servers, business rules, script includes, client scripts.
 - **OAuth sign-in** through ServiceNow's own login (SSO works), so ACLs and approvals apply to the real user.
-- **Governance**: write rate limits, a JSON audit log, and a management UI bound to localhost.
+- **Governance:** write rate limits, a JSON audit log, and a management UI bound to localhost.
 
 ## Install
 
@@ -55,7 +62,7 @@ Claude Desktop (`claude_desktop_config.json`):
 }
 ```
 
-Then just ask: "How many P1 incidents are open?", "Open the change form for tonight's DB patch", "Show my pending approvals".
+Then just ask: "How many P1 incidents are open?", "Open the incident form for a VPN outage", "Open the change form for tonight's DB patch", "Show my pending approvals".
 
 ## Develop from source
 
