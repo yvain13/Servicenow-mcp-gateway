@@ -13,7 +13,8 @@
     "data/store.seed.json",
     "apps/_kit/dist/*.js",
     "apps/*/dist/index.html",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
@@ -59,5 +60,6 @@
     "vite": "^8.3.6",
     "vite-plugin-singlefile": "^2.3.4",
     "vitest": "^3.2.7"
-  }
+  },
+  "license": "SEE LICENSE IN LICENSE"
 }

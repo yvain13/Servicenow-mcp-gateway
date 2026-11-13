@@ -1,10 +1,84 @@
-# servicenow-mcp-gateway
+<p align="center">
+  <img src="docs/img/banner.svg" alt="ServiceNow MCP Gateway — your ServiceNow APIs as MCP tools any AI can use" width="100%">
+</p>
 
-**[Visual tour and agent setup skill →](https://yvain13.github.io/Servicenow-mcp-gateway/)**
+<p align="center">
+  <a href="https://www.npmjs.com/package/servicenow-mcp-gateway"><img alt="npm" src="https://img.shields.io/npm/v/servicenow-mcp-gateway?label=npm&color=2E8B57"></a>
+  <img alt="Node 20+" src="https://img.shields.io/badge/node-20%2B-1B5E3F">
+  <img alt="MCP" src="https://img.shields.io/badge/MCP-Streamable%20HTTP-143F2C?labelColor=555">
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-Attribution%20required-E8590C"></a>
+</p>
 
-A local gateway that turns ServiceNow REST APIs into MCP (Model Context Protocol) tools, so they can be used by Claude Desktop, Claude Code, or any MCP-compatible client.
+<h1 align="center">ServiceNow MCP Gateway</h1>
 
-You point the gateway at a ServiceNow instance, declare tools in a web UI (each tool wraps a Table API or Scripted REST endpoint), and the gateway exposes them as MCP servers over **Streamable HTTP**. Each MCP server runs on its own port and can be hot-edited without restarting clients.
+<p align="center"><b>Connect Claude, Cursor, Copilot, Gemini CLI, or any MCP client to ServiceNow, with tools you define yourself.</b></p>
+
+<p align="center">Point the gateway at an instance, declare tools in a web UI (each one wraps a Table API or Scripted REST endpoint), and it serves them as MCP servers. Edit a tool and every connected AI sees the change at once, no restart.</p>
+
+<p align="center"><a href="https://yvain13.github.io/Servicenow-mcp-gateway/"><b>Visual tour and agent setup skill →</b></a></p>
+
+## ✨ What you get
+
+| | |
+|---|---|
+| 🧰 **No-code tools** | Build MCP tools from a web UI on top of any table or Scripted REST API. Live-edited: no client restarts. |
+| 📦 **8 ready-made servers** | Incidents, changes, problems, CMDB, servers, business rules, script includes and client scripts, out of the box. |
+| 🖼️ **MCP Apps** | Interactive UIs inside the chat: a change form, an approval inbox, an incident form, or your own (JSON spec or one HTML file). |
+| 🔐 **Sign in as yourself** | OAuth sign-in through ServiceNow's own login page (SSO works), so ACLs and approvals apply to the real user. |
+| 🛡️ **Governance built in** | Write rate limits, a JSON audit log, query sanitising, and a management UI bound to localhost. |
+| 🔌 **Any client** | Claude Desktop, Claude Code, Cursor and any client that speaks MCP over Streamable HTTP (or stdio through `mcp-remote`). |
+
+## 🚀 Install (2 minutes)
+
+Requires Node.js 20+.
+
+```bash
+SN_INSTANCE_URL=https://devXXXXXX.service-now.com SN_USERNAME=... SN_PASSWORD=... npx servicenow-mcp-gateway
+```
+
+Open the gateway UI at <http://localhost:3001>, pick a server, click **Config snippet**, and paste the config into your AI client. Restart the client and start asking.
+
+No instance? Get a free Personal Developer Instance at [developer.servicenow.com](https://developer.servicenow.com).
+
+## 🔌 Manual setup
+
+**Claude Code** speaks HTTP directly:
+
+```bash
+claude mcp add --transport http incident-mcp http://localhost:7801/mcp
+```
+
+**Claude Desktop** (`claude_desktop_config.json`) bridges with `mcp-remote`:
+
+```json
+{
+  "mcpServers": {
+    "incident-mcp": { "command": "npx", "args": ["mcp-remote", "http://localhost:7801/mcp"] }
+  }
+}
+```
+
+Every bundled server, OAuth and per-user login → [Wiring into Claude Desktop](#wiring-into-claude-desktop) · [Wiring into Claude Code](#wiring-into-claude-code) · [OAuth sign-in](#oauth-sign-in).
+
+## 💬 Use it: just ask
+
+- "How many P1 incidents are open right now?"
+- "Open the change form for tonight's database patch on db-prod-02."
+- "Show my pending change approvals and their risk."
+- "Create a business rule on incident that sets the assignment group from the CI."
+- "Get the server details for web-prod-01."
+
+Write tools are rate-limited and every call is written to the audit log. Approvals are refused on a shared service account, so they're always recorded as the real approver.
+
+## 📜 License and credit
+
+Free to use, modify and share under the [ServiceNow MCP Gateway Attribution License](LICENSE). **If you fork it, ship it, offer it as a service, or show it in a blog, video or talk, credit the author** with:
+
+> Built with [ServiceNow MCP Gateway](https://github.com/yvain13/Servicenow-mcp-gateway) by **Tushar Mishra**
+
+---
+
+# Reference
 
 ## Architecture
 
@@ -26,7 +100,7 @@ Claude Code  ──────────────HTTP───────
 - **Each MCP server** is its own Express app on its own port, mounting `POST/GET/DELETE /mcp` via the official MCP TypeScript SDK's `StreamableHTTPServerTransport`.
 - **Servers and tools** are saved in `data/store.json` (local, not tracked; it starts from `data/store.seed.json`) and read live on every `tools/list` and `tools/call`, so adding or editing a tool takes effect immediately without restarting clients.
 
-## Quick start
+## Install options
 
 Run it straight from npm (Node 20+):
 
@@ -410,6 +484,7 @@ data/
 
 ---
 
-### Stay in the loop
-
-If this was useful, follow **[AI by Tushar M on YouTube](https://www.youtube.com/@AIbyTusharM)** — subscribe for more such tools, learning and walkthroughs.
+<p align="center">
+  Made by <b>Tushar Mishra</b> · <a href="https://www.youtube.com/@AIbyTusharM">AI by Tushar M on YouTube</a>: subscribe for more tools, learning and walkthroughs.<br>
+  <sub>© 2026 Tushar Mishra · <a href="LICENSE">Attribution License</a> · ServiceNow is a trademark of ServiceNow, Inc.; this project is independent and not affiliated with it.</sub>
+</p>

@@ -1,0 +1,56 @@
+ServiceNow MCP Gateway — Attribution License
+Version 1.0
+
+Copyright (c) 2026 Tushar Mishra
+https://github.com/yvain13/Servicenow-mcp-gateway
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+1. Copyright notice. The above copyright notice, this permission notice and
+   the attribution requirement below shall be included in all copies or
+   substantial portions of the Software.
+
+2. Attribution. Anyone who uses the Software, or any modified version or
+   portion of it, in any of the following ways must give clear and visible
+   credit to the author:
+
+   (a) redistributing it, forking it, or publishing a modified version;
+   (b) offering it, or a product or service built on it, to other people
+       (including as a hosted or internal service for an organisation);
+   (c) presenting, demonstrating or teaching it in public content such as
+       articles, blog posts, videos, talks, courses or social media posts.
+
+   The credit must include the author's name and a link to this project,
+   for example:
+
+       Built with ServiceNow MCP Gateway by Tushar Mishra
+       https://github.com/yvain13/Servicenow-mcp-gateway
+
+   It must appear where a reader or user would reasonably see it: the
+   README or documentation of a fork or derivative; an "About", "Credits"
+   or footer section of a product or service; or the description, show
+   notes or slides of public content.
+
+3. No endorsement. The author's name may not be used to endorse or promote
+   products derived from the Software without prior written permission,
+   beyond the attribution required above.
+
+Purely private use for evaluation or personal learning, with nothing shared
+or offered to others, needs no public credit, but the notices in item 1 must
+remain in the files.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHOR OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+ServiceNow is a trademark of ServiceNow, Inc. This project is independent and
+is not affiliated with or endorsed by ServiceNow, Inc.
