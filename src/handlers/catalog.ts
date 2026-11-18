@@ -190,16 +190,52 @@ export async function resolveItem(
 
 // ── Form definition ─────────────────────────────────────────────────────────
 
+const CHOICE_TYPES = new Set([1, 3, 4, 5, 18, 22]);
+
+// Choices per variable (keyed by item_option_new sys_id and by name) from
+// GET /api/sn_sc/servicecatalog/items/{id}. Variable sets may nest variables under children.
+export async function scChoices(sn: SNClient, itemSysId: string): Promise<Map<string, { value: string; label: string }[]>> {
+  const out = new Map<string, { value: string; label: string }[]>();
+  let data: any;
+  try {
+    data = await sn.request("GET", `/api/sn_sc/servicecatalog/items/${itemSysId}`);
+  } catch {
+    return out;
+  }
+  const walk = (vars: unknown) => {
+    if (!Array.isArray(vars)) return;
+    for (const v of vars as any[]) {
+      if (Array.isArray(v?.choices) && v.choices.length) {
+        const list = v.choices
+          .filter((c: any) => c && c.value !== undefined && c.value !== null && String(c.value) !== "")
+          .map((c: any) => ({ value: String(c.value), label: String(c.label ?? c.text ?? c.value) }));
+        if (list.length) {
+          if (v.id) out.set(String(v.id), list);
+          if (v.name) out.set(String(v.name), list);
+        }
+      }
+      walk(v?.children);
+    }
+  };
+  walk(data?.result?.variables);
+  return out;
+}
+
 async function loadChoices(sn: SNClient, vars: any[]): Promise<Map<string, { value: string; label: string }[]>> {
   const out = new Map<string, { value: string; label: string }[]>();
   const ids = vars.map((v) => v.sys_id);
   if (ids.length) {
-    const rows = await sn.list("question_choice", `questionIN${ids.join(",")}^inactive!=true^ORDERBYorder`, {
-      fields: ["question", "text", "value", "order"],
-      limit: 1000,
-    });
-    rows.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    // Inactive choices are filtered here rather than in the query: a condition on a column an
+    // instance doesn't have can make the Table API return no rows at all.
+    const rows = await sn
+      .list("question_choice", `questionIN${ids.join(",")}^ORDERBYorder`, {
+        fields: ["question", "text", "value", "order", "inactive"],
+        limit: 1000,
+      })
+      .catch(() => [] as any[]);
+    rows.sort((a, b) => Number(val(a.order) || 0) - Number(val(b.order) || 0));
     for (const r of rows) {
+      if (truthy(r.inactive)) continue;
       const q = val(r.question);
       if (!out.has(q)) out.set(q, []);
       out.get(q)!.push({ value: String(r.value), label: String(r.text || r.value) });
@@ -290,6 +326,16 @@ export async function loadItemForm(sn: SNClient, itemSysId: string, callerSysId?
   });
 
   const choices = await loadChoices(sn, raw);
+  // Choice variables still without options: ask the Service Catalog API, which returns each
+  // variable's choices as the portal sees them.
+  const needs = raw.filter((v) => CHOICE_TYPES.has(Number(v.type)) && !choices.get(v.sys_id)?.length);
+  if (needs.length) {
+    const fromSc = await scChoices(sn, itemSysId);
+    for (const v of needs) {
+      const list = fromSc.get(v.sys_id) ?? fromSc.get(String(v.name));
+      if (list?.length) choices.set(v.sys_id, list);
+    }
+  }
   const variables: CatalogVariable[] = [];
   let me: { sys_id: string; name: string } | undefined;
   for (const v of raw) {

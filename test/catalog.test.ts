@@ -17,6 +17,7 @@ afterAll(async () => {
 // Mirrors the OOB "Provision a Database" item: two references and a multiple choice.
 beforeEach(() => {
   sn.tables = {};
+  sn.scVariables = {};
   sn.calls = [];
   resetCatalogIdempotency();
   clearDisplayCache();
@@ -84,6 +85,31 @@ describe("catalog form", () => {
     sn.insert("item_option_new", { variable_set: set.sys_id, name: "phone", question_text: "Phone", type: "6", order: "1", active: "true" });
     const r = await call("catalog.item_form", { item_sys_id: item.sys_id });
     expect((r.structured as any).variables.map((v: any) => v.name)).toEqual(["primary_contact", "phone", "cost_center", "business_purpose"]);
+  });
+
+  it("hides inactive choices", async () => {
+    sn.insert("question_choice", { question: purposeVar.sys_id, text: "Retired", value: "retired", order: "50", inactive: "true" });
+    const r = await call("catalog.item_form", { item_sys_id: item.sys_id });
+    expect((r.structured as any).variables[2].choices.map((c: any) => c.label)).not.toContain("Retired");
+  });
+
+  it("falls back to the Service Catalog API when question_choice has no rows", async () => {
+    sn.tables["question_choice"] = [];
+    sn.scVariables[item.sys_id] = [
+      { id: "x", name: "other", choices: [] },
+      { name: "set", children: [{ id: purposeVar.sys_id, name: "business_purpose", choices: [{ label: "-- None --", value: "" }, { label: "KTLO", value: "KTLO" }, { label: "Testing", value: "Testing" }] }] },
+    ];
+    const r = await call("catalog.item_form", { item_sys_id: item.sys_id });
+    expect((r.structured as any).variables[2].choices).toEqual([
+      { value: "KTLO", label: "KTLO" },
+      { value: "Testing", label: "Testing" },
+    ]);
+    const o = await call("catalog.order", {
+      item_sys_id: item.sys_id,
+      variables: { primary_contact: contact.sys_id, cost_center: cc.sys_id, business_purpose: "testing" },
+    });
+    expect(o.isError).toBeFalsy();
+    expect(sn.calls.find((c) => c.method === "POST")!.body.variables.business_purpose).toBe("Testing");
   });
 
   it("opens by name, passes prefill through and lists what is missing", async () => {
