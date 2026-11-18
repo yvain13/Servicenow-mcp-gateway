@@ -1,6 +1,7 @@
 import { changeHandlers } from "./change.js";
 import { approvalHandlers } from "./approvals.js";
 import { kitHandlers } from "./kit.js";
+import { catalogHandlers } from "./catalog.js";
 import type { HandlerDef, HandlerRegistry } from "./types.js";
 
 export * from "./types.js";
@@ -10,6 +11,7 @@ export const handlers: HandlerRegistry = {
   ...changeHandlers,
   ...approvalHandlers,
   ...kitHandlers,
+  ...catalogHandlers,
 };
 
 export function getHandler(name: string | undefined): HandlerDef | undefined {

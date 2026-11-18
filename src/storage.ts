@@ -15,16 +15,51 @@ export const APPS_DATA_DIR = join(STORE_DIR, "apps");
 const SEED_FILE = join(SEED_DIR, "store.seed.json");
 const EMPTY: Store = { instance: null, servers: [] };
 
-function read(): Store {
-  if (!existsSync(DATA_FILE)) {
-    if (process.env["STORE_FILE"] || !existsSync(SEED_FILE)) return structuredClone(EMPTY);
-    return JSON.parse(readFileSync(SEED_FILE, "utf8")) as Store;
-  }
+function readSeed(): Store | null {
+  if (process.env["STORE_FILE"] || !existsSync(SEED_FILE)) return null;
   try {
-    return JSON.parse(readFileSync(DATA_FILE, "utf8")) as Store;
+    return JSON.parse(readFileSync(SEED_FILE, "utf8")) as Store;
+  } catch {
+    return null;
+  }
+}
+
+function stripSeedMeta(server: MCPServer): MCPServer {
+  const { addedIn: _addedIn, ...rest } = server;
+  return rest;
+}
+
+// Adds built-in servers introduced after this store was created (e.g. service-catalog), once.
+// Stores from before `seeded` existed are treated as having been offered every seed server
+// without an `addedIn` version. A server whose id, name or port is already taken is skipped.
+export function mergeNewSeeds(store: Store, seed: Store): boolean {
+  const offered = new Set(store.seeded ?? seed.servers.filter((s) => !s.addedIn).map((s) => s.id));
+  let changed = store.seeded === undefined;
+  for (const s of seed.servers) {
+    if (offered.has(s.id)) continue;
+    offered.add(s.id);
+    changed = true;
+    const clash = store.servers.some((x) => x.id === s.id || x.name === s.name || x.port === s.port);
+    if (!clash) store.servers.push(stripSeedMeta(s));
+  }
+  store.seeded = [...offered];
+  return changed;
+}
+
+function read(): Store {
+  const seed = readSeed();
+  if (!existsSync(DATA_FILE)) {
+    if (!seed) return structuredClone(EMPTY);
+    return { ...seed, servers: seed.servers.map(stripSeedMeta), seeded: seed.servers.map((s) => s.id) };
+  }
+  let store: Store;
+  try {
+    store = JSON.parse(readFileSync(DATA_FILE, "utf8")) as Store;
   } catch {
     return structuredClone(EMPTY);
   }
+  if (seed && mergeNewSeeds(store, seed)) write(store);
+  return store;
 }
 
 function write(store: Store): void {

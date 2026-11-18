@@ -18,6 +18,7 @@ process.env["STORE_FILE"] = join(dir, "store.json");
 process.env["AUDIT_LOG"] = join(dir, "audit.log");
 const real = JSON.parse(readFileSync("data/store.seed.json", "utf8"));
 const changeOps = real.servers.find((s: any) => s.name === "change-ops");
+const catalog = { ...real.servers.find((s: any) => s.name === "service-catalog"), id: "cat", port: 47904 };
 const PORTS = { service: 47901, user: 47902, kit: 47903 };
 // No-code App Kit apps on a plain Table API server.
 const Q = (name: string, required = false, inn = "query") => ({ name, description: name, type: "string", required, in: inn });
@@ -65,6 +66,7 @@ writeFileSync(
       { ...changeOps, id: "co", port: PORTS.service },
       { ...changeOps, id: "co-user", name: "change-ops-user", port: PORTS.user, identity: "per-user" },
       kitServer,
+      catalog,
     ],
   })
 );
@@ -116,6 +118,25 @@ const manager = new MCPManager({ instanceUrl: sn.url, username: "admin", passwor
 await manager.start({ ...changeOps, id: "co", port: PORTS.service });
 await manager.start({ ...changeOps, id: "co-user", name: "change-ops-user", port: PORTS.user, identity: "per-user" });
 await manager.start(kitServer as any);
+await manager.start(catalog);
+// The OOB "Provision a Database" item: two references and a multiple choice.
+sn.insert("sys_user", { user_name: "admin", name: "System Administrator", email: "admin@example.com", active: "true" });
+const abel = sn.insert("sys_user", { user_name: "abel.tuter", name: "Abel Tuter", email: "abel.tuter@example.com", active: "true" });
+const fin = sn.insert("cmn_cost_center", { name: "Finance", code: "FIN" });
+sn.insert("cmn_cost_center", { name: "Engineering", code: "ENG" });
+sn.insert("sys_dictionary", { name: "sys_user", element: "name", display: "true" });
+sn.insert("sys_dictionary", { name: "cmn_cost_center", element: "name", display: "true" });
+const dbItem = sn.insert("sc_cat_item", {
+  name: "Provision a Database", short_description: "Request to provision a new database", active: "true", price: "0",
+  description: "<ul><li>Maintenance Script Setup</li><li>Memory and Storage Sizing</li><li>Backup services</li></ul>",
+  delivery_time: "1970-01-03 00:00:00", no_quantity: "false", sys_class_name: "sc_cat_item",
+});
+sn.insert("item_option_new", { cat_item: dbItem.sys_id, name: "primary_contact", question_text: "Who is the primary contact?", type: "8", reference: "sys_user", mandatory: "true", order: "100", active: "true" });
+sn.insert("item_option_new", { cat_item: dbItem.sys_id, name: "cost_center", question_text: "What cost center will be billed?", type: "8", reference: "cmn_cost_center", mandatory: "true", order: "200", active: "true" });
+const purpose = sn.insert("item_option_new", { cat_item: dbItem.sys_id, name: "business_purpose", question_text: "What is the business purpose", type: "3", mandatory: "true", order: "300", active: "true" });
+["KTLO", "Special Projects", "Testing", "Other"].forEach((t, i) =>
+  sn.insert("question_choice", { question: purpose.sys_id, text: t, value: t, order: String(i), inactive: "false" })
+);
 for (const [p, d] of [["1", "1 - Critical"], ["2", "2 - High"], ["2", "2 - High"], ["4", "4 - Low"]]) {
   sn.insert("incident", { number: `INC00${sn.tables["incident"]?.length ?? 0}`, priority: p, priority__display: d, active: "true", state: "2" });
 }
@@ -292,6 +313,45 @@ try {
   check(sn.find("incident", resolved.sys_id)!["state"] === "7" && sn.find("incident", resolved.sys_id)!["work_notes"] === "Confirmed fixed with the user", "kit approval action sent templated args");
   if (shots) await q.page.screenshot({ path: join(shots, "kit-approval.png") });
   await q.page.close();
+
+  // ── Service Catalog: any item as a form, ordered into REQ + RITM ──
+  const cat = await mcp(catalog.port);
+  const c = await openApp(cat, "ui://service-catalog/catalog-request", "open_catalog_item", {
+    item: "Provision a Database", values: { primary_contact: "Abel Tuter", business_purpose: "Testing" },
+  });
+  await c.frame.locator("#v_primary_contact").waitFor();
+  await c.page.waitForTimeout(600);
+  check((await c.frame.locator("h1").first().textContent()) === "Provision a Database", "catalog item title shown");
+  check((await c.frame.locator(".desc li").count()) === 3, "catalog description rendered");
+  check((await c.frame.locator("#v_primary_contact").inputValue()) === "Abel Tuter", "reference prefilled from a name");
+  check(await c.frame.locator("input[name=v_business_purpose][value=Testing]").isChecked(), "choice prefilled");
+  if (shots) await c.page.screenshot({ path: join(shots, "catalog-form.png") });
+  await c.frame.locator("button[type=submit]").click();
+  await c.frame.locator(".field.invalid").first().waitFor();
+  check((await c.frame.locator(".field.invalid").count()) === 1, "missing cost center highlighted");
+  if (shots) await c.page.screenshot({ path: join(shots, "catalog-errors.png") });
+  await c.frame.locator("#v_cost_center").fill("fin");
+  await c.frame.locator(".typeahead .menu div", { hasText: "Finance" }).click();
+  await c.frame.locator("#qty").fill("2");
+  await c.frame.locator("button[type=submit]").click();
+  await c.frame.locator(".shell-dialog").waitFor();
+  if (shots) await c.page.screenshot({ path: join(shots, "catalog-confirm.png") });
+  await c.frame.locator(".shell-dialog button.primary").dblclick();
+  await c.frame.locator(".card h1").waitFor();
+  const reqs = sn.tables["sc_request"] ?? [];
+  const ritm = (sn.tables["sc_req_item"] ?? [])[0];
+  check(reqs.length === 1, "one request created");
+  check(
+    ritm?.["quantity"] === "2" && ritm?.["variables"]?.cost_center === fin.sys_id && ritm?.["variables"]?.primary_contact === abel.sys_id &&
+      ritm?.["variables"]?.business_purpose === "Testing",
+    "RITM carries the variables as sys_ids and choice values"
+  );
+  check((await c.frame.locator(".card h1").textContent())!.includes(reqs[0]?.["number"] ?? "??"), "REQ number shown");
+  check((await c.frame.locator(".ritm").count()) === 1, "RITM listed");
+  const cctx = await c.page.evaluate(() => (window as any).modelContext);
+  check(cctx.some((x: any) => x.content[0].text.includes(ritm?.["number"] ?? "??")), "RITM posted to model context");
+  if (shots) await c.page.screenshot({ path: join(shots, "catalog-done.png") });
+  await c.page.close();
 } finally {
   await browser.close();
   await manager.stopAll();

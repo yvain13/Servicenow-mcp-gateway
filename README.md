@@ -28,7 +28,8 @@
 
 - **Any API, as a tool:** Table API (get, list, create, update) and Scripted REST endpoints, built and edited live from the web UI.
 - **ServiceNow forms in the chat (MCP Apps):** incident and change forms with reference lookups and choice lists from your instance, plus approval inboxes. Build your own from a JSON spec or one HTML file.
-- **8 ready-made servers:** incidents, changes, problems, CMDB, servers, business rules, script includes, client scripts.
+- **Any Service Catalog item as a form:** say "fill the Provision a Database form for me" and the chat shows the item's variables as a form. Ordering it creates the request (REQ) and requested item (RITM) through the Service Catalog API.
+- **9 ready-made servers:** incidents, changes, Service Catalog, problems, CMDB, servers, business rules, script includes, client scripts.
 - **OAuth sign-in** through ServiceNow's own login (SSO works), so ACLs and approvals apply to the real user.
 - **Governance:** write rate limits, a JSON audit log, and a management UI bound to localhost.
 
@@ -62,7 +63,11 @@ Claude Desktop (`claude_desktop_config.json`):
 }
 ```
 
-Then just ask: "How many P1 incidents are open?", "Open the incident form for a VPN outage", "Open the change form for tonight's DB patch", "Show my pending approvals".
+Then just ask: "How many P1 incidents are open?", "Open the incident form for a VPN outage", "Open the change form for tonight's DB patch", "Show my pending approvals", "Request a database for Abel Tuter, it's for testing".
+
+### Service Catalog forms
+
+The `service-catalog` server (port 7830) opens any catalog item as a form built from its variables: text, multi-line text, select boxes, multiple choice, yes/no, checkboxes, references and list collectors with search, dates, email, URL and IP fields, labels, containers and single-row variable sets. Mandatory fields, choices and references are checked by the gateway before ordering. UI policies, client scripts, catalog data lookups and multi-row variable sets are not run, so it suits simple items such as the out-of-the-box *Provision a Database*. Clients without MCP Apps get the variables as text and can order with `catalog_order`.
 
 ## Develop from source
 

@@ -169,6 +169,33 @@ export class FakeSN {
       }
       res.json(createChange("standard", req.body, fromTemplate));
     });
+    // Service Catalog API: order_now creates a request and one requested item.
+    let reqSeq = 10000;
+    app.post("/api/sn_sc/servicecatalog/items/:id/order_now", (req, res) => {
+      const item = this.find("sc_cat_item", req.params.id);
+      if (!item) return res.status(400).json({ error: { message: "Catalog item not found" } });
+      const n = ++reqSeq;
+      const user = (this.tables["sys_user"] ?? []).find((u) => u["user_name"] === (req as any).user);
+      const request = this.insert("sc_request", {
+        number: `REQ00${n}`,
+        request_state: "requested",
+        requested_for: req.body.sysparm_requested_for ?? user?.["sys_id"] ?? "",
+      });
+      this.insert("sc_req_item", {
+        number: `RITM00${n}`,
+        request: request.sys_id,
+        cat_item: item.sys_id,
+        quantity: req.body.sysparm_quantity,
+        variables: req.body.variables,
+        stage: "request_approved",
+        stage__display: "Request Approved",
+        state: "1",
+        state__display: "Open",
+        approval: "approved",
+        approval__display: "Approved",
+      });
+      res.json({ result: { sys_id: request.sys_id, number: request.number, request_number: request.number, request_id: request.sys_id, table: "sc_request" } });
+    });
     app.patch("/api/sn_chg_rest/change/:id", (req, res) => {
       const r = this.find("change_request", req.params.id);
       if (!r) return res.status(404).json({ error: { message: "not found" } });
