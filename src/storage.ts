@@ -29,20 +29,26 @@ function stripSeedMeta(server: MCPServer): MCPServer {
   return rest;
 }
 
-// Adds built-in servers introduced after this store was created (e.g. service-catalog), once.
-// Stores from before `seeded` existed are treated as having been offered every seed server
-// without an `addedIn` version. A server whose id, name or port is already taken is skipped.
+// Adds built-in servers introduced in later versions (seed entries with `addedIn`, e.g.
+// service-catalog) to an existing store. A server the user deleted is recorded in
+// `removedSeeds` and not brought back; one whose name is taken is skipped; one whose port is
+// taken moves to the next free port. Older seed servers are never re-added.
 export function mergeNewSeeds(store: Store, seed: Store): boolean {
-  const offered = new Set(store.seeded ?? seed.servers.filter((s) => !s.addedIn).map((s) => s.id));
-  let changed = store.seeded === undefined;
-  for (const s of seed.servers) {
-    if (offered.has(s.id)) continue;
-    offered.add(s.id);
+  let changed = false;
+  if (store.seeded !== undefined) {
+    delete store.seeded; // replaced by removedSeeds
     changed = true;
-    const clash = store.servers.some((x) => x.id === s.id || x.name === s.name || x.port === s.port);
-    if (!clash) store.servers.push(stripSeedMeta(s));
   }
-  store.seeded = [...offered];
+  const removed = new Set(store.removedSeeds ?? []);
+  for (const s of seed.servers) {
+    if (!s.addedIn || removed.has(s.id)) continue;
+    if (store.servers.some((x) => x.id === s.id || x.name === s.name)) continue;
+    const used = new Set(store.servers.map((x) => x.port));
+    let port = s.port;
+    while (used.has(port)) port++;
+    store.servers.push({ ...stripSeedMeta(s), port });
+    changed = true;
+  }
   return changed;
 }
 
@@ -50,7 +56,7 @@ function read(): Store {
   const seed = readSeed();
   if (!existsSync(DATA_FILE)) {
     if (!seed) return structuredClone(EMPTY);
-    return { ...seed, servers: seed.servers.map(stripSeedMeta), seeded: seed.servers.map((s) => s.id) };
+    return { ...seed, servers: seed.servers.map(stripSeedMeta) };
   }
   let store: Store;
   try {
@@ -115,8 +121,13 @@ export function deleteServer(id: string): boolean {
   const store = read();
   const before = store.servers.length;
   store.servers = store.servers.filter((s) => s.id !== id);
+  const removedNow = store.servers.length < before;
+  // Remember deleted built-in servers so a later upgrade doesn't add them back.
+  if (removedNow && readSeed()?.servers.some((s) => s.id === id)) {
+    store.removedSeeds = [...new Set([...(store.removedSeeds ?? []), id])];
+  }
   write(store);
-  return store.servers.length < before;
+  return removedNow;
 }
 
 // ── Tools ─────────────────────────────────────────────────────────────────────

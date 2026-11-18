@@ -110,8 +110,8 @@ export interface InstanceConfig {
 export interface Store {
   instance: InstanceConfig | null;
   servers: MCPServer[];
-  // Seed server ids already offered to this store, so built-in servers added in later
-  // versions appear once on upgrade and a deleted one is not brought back.
-  seeded?: string[];
+  // Built-in (seed) servers the user deleted, so upgrades don't add them back.
+  removedSeeds?: string[];
+  seeded?: string[]; // legacy, removed on read
 }
 

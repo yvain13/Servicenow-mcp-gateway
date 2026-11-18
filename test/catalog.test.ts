@@ -185,24 +185,41 @@ describe("seed upgrades", () => {
     instance: null,
     servers: [
       { id: "a", name: "incident-mcp", port: 1, description: "", tools: [] },
+      { id: "old", name: "change-ops", port: 3, description: "", tools: [] },
       { id: "cat", name: "service-catalog", port: 2, description: "", tools: [], addedIn: "0.2.0" },
     ],
   } as any;
+  const existing = () => ({ instance: null, servers: [{ id: "a", name: "incident-mcp", port: 1, description: "", tools: [] }] }) as any;
 
-  it("adds a new built-in server to an existing store once, without its seed metadata", () => {
-    const store = { instance: null, servers: [{ id: "a", name: "incident-mcp", port: 1, description: "", tools: [] }] } as any;
+  it("adds a new built-in server to an existing store, without its seed metadata", () => {
+    const store = existing();
     expect(mergeNewSeedsForTest(store, seed)).toBe(true);
-    expect(store.servers.map((s: any) => s.id)).toEqual(["a", "cat"]);
+    expect(store.servers.map((s: any) => s.id)).toEqual(["a", "cat"]); // the user's deleted change-ops stays gone
     expect(store.servers[1]).not.toHaveProperty("addedIn");
-    expect(store.seeded.sort()).toEqual(["a", "cat"]);
-    // Deleted by the user: not brought back.
-    store.servers = store.servers.filter((s: any) => s.id !== "cat");
+    expect(mergeNewSeedsForTest(store, seed)).toBe(false);
+  });
+
+  it("does not bring back a built-in server the user deleted", () => {
+    const store = { ...existing(), removedSeeds: ["cat"] };
     expect(mergeNewSeedsForTest(store, seed)).toBe(false);
     expect(store.servers).toHaveLength(1);
   });
 
-  it("skips a new server whose port is taken", () => {
-    const store = { instance: null, servers: [{ id: "x", name: "mine", port: 2, description: "", tools: [] }] } as any;
+  it("moves to the next free port when the seed port is taken", () => {
+    const store = { instance: null, servers: [{ id: "x", name: "apps-demo", port: 2, description: "", tools: [] }, { id: "y", name: "y", port: 3, description: "", tools: [] }] } as any;
+    mergeNewSeedsForTest(store, seed);
+    expect(store.servers.find((s: any) => s.id === "cat")?.port).toBe(4);
+  });
+
+  it("recovers a store that the earlier version marked as seeded but skipped", () => {
+    const store = { ...existing(), seeded: ["a", "cat"] };
+    expect(mergeNewSeedsForTest(store, seed)).toBe(true);
+    expect(store).not.toHaveProperty("seeded");
+    expect(store.servers.map((s: any) => s.id)).toEqual(["a", "cat"]);
+  });
+
+  it("skips a new server whose name is taken", () => {
+    const store = { instance: null, servers: [{ id: "x", name: "service-catalog", port: 9, description: "", tools: [] }] } as any;
     mergeNewSeedsForTest(store, seed);
     expect(store.servers.map((s: any) => s.id)).toEqual(["x"]);
   });
