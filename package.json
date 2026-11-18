@@ -1,6 +1,6 @@
 {
   "name": "servicenow-mcp-gateway",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local gateway that turns ServiceNow REST APIs into MCP tools",
   "type": "module",
   "bin": {
