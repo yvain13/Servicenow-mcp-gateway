@@ -98,6 +98,7 @@ export interface MCPServer {
   apps?: UIApp[];
   identity?: IdentityMode;
   oauthCredential?: string; // "oauth" identity: the saved OAuth credential offered first at login
+  addedIn?: string; // seed file only: the version that introduced this built-in server
 }
 
 export interface InstanceConfig {
@@ -109,5 +110,8 @@ export interface InstanceConfig {
 export interface Store {
   instance: InstanceConfig | null;
   servers: MCPServer[];
+  // Seed server ids already offered to this store, so built-in servers added in later
+  // versions appear once on upgrade and a deleted one is not brought back.
+  seeded?: string[];
 }
 

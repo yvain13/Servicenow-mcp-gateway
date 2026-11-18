@@ -1542,6 +1542,237 @@
           "id": "5c25c200-24eb-4625-b87c-65123d8a5e24"
         }
       ]
+    },
+    {
+      "name": "service-catalog",
+      "description": "Order anything from the ServiceNow Service Catalog. Opens any catalog item (for example \"Provision a Database\") as a form in the chat, built from the item's variables; submitting it creates the request (REQ) and requested items (RITM).",
+      "port": 7830,
+      "id": "9b0f6c3e-5a7d-4c1e-8f2a-6d4b3e1c7a90",
+      "appsEnabled": true,
+      "identity": "service",
+      "apps": [
+        {
+          "uri": "ui://service-catalog/catalog-request",
+          "name": "Catalog request form",
+          "description": "Any Service Catalog item as a form: fill in its variables and order it.",
+          "bundle": "apps/catalog-request/dist/index.html"
+        }
+      ],
+      "tools": [
+        {
+          "name": "open_catalog_item",
+          "description": "Open a Service Catalog item as an interactive form in the chat, e.g. when the user says \"fill this form for me\" or \"request a database\". Give the item name (e.g. \"Provision a Database\") or sys_id, and prefill `values` keyed by variable name with whatever you can infer (reference values may be display names, choice values may be labels). The user reviews and orders it in the form; that creates a REQ and RITM. The result lists the item's variables.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "item",
+              "description": "Catalog item name or sys_id",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "quantity",
+              "description": "Quantity (default 1)",
+              "type": "number",
+              "required": false,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "catalog.open_form",
+          "id": "4c2a1f7e-0b3d-4e5a-9c6f-1a2b3c4d5e01",
+          "ui": {
+            "resourceUri": "ui://service-catalog/catalog-request",
+            "visibility": [
+              "model",
+              "app"
+            ]
+          },
+          "inputSchema": {
+            "properties": {
+              "values": {
+                "type": "object",
+                "description": "Prefill values keyed by variable name",
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "search_catalog_items",
+          "description": "Search active Service Catalog items by name or description.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "text",
+              "description": "Search text",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "limit",
+              "description": "Max results (default 10)",
+              "type": "number",
+              "required": false,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "catalog.search",
+          "id": "4c2a1f7e-0b3d-4e5a-9c6f-1a2b3c4d5e02"
+        },
+        {
+          "name": "catalog_item_form",
+          "description": "Load a catalog item's variables to render its form.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "item_sys_id",
+              "description": "sc_cat_item sys_id",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "catalog.item_form",
+          "id": "4c2a1f7e-0b3d-4e5a-9c6f-1a2b3c4d5e03",
+          "ui": {
+            "resourceUri": "ui://service-catalog/catalog-request",
+            "visibility": [
+              "app"
+            ]
+          }
+        },
+        {
+          "name": "catalog_reference_search",
+          "description": "Search records for a reference or list collector variable.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "variable_id",
+              "description": "item_option_new sys_id",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "text",
+              "description": "Search text",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "limit",
+              "description": "Max results (default 10)",
+              "type": "number",
+              "required": false,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "catalog.reference_search",
+          "id": "4c2a1f7e-0b3d-4e5a-9c6f-1a2b3c4d5e04",
+          "ui": {
+            "resourceUri": "ui://service-catalog/catalog-request",
+            "visibility": [
+              "app"
+            ]
+          }
+        },
+        {
+          "name": "catalog_order",
+          "description": "Order a catalog item (Service Catalog API order_now), creating a REQ and RITM(s). Validates mandatory variables, choices and references. Prefer open_catalog_item so the user reviews the form; only call this directly when the client cannot show forms and the user confirmed the values.",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "item_sys_id",
+              "description": "sc_cat_item sys_id (or item name)",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            },
+            {
+              "name": "quantity",
+              "description": "Quantity (default 1)",
+              "type": "number",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "requested_for",
+              "description": "sys_user sys_id, user name or email to order for (default: caller)",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            },
+            {
+              "name": "idempotency_key",
+              "description": "Per-form key; repeat submits return the first result",
+              "type": "string",
+              "required": false,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "catalog.order",
+          "id": "4c2a1f7e-0b3d-4e5a-9c6f-1a2b3c4d5e05",
+          "inputSchema": {
+            "properties": {
+              "variables": {
+                "type": "object",
+                "description": "Variable values keyed by variable name",
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "catalog_request_status",
+          "description": "Status of a catalog request and its requested items (stage, state, approval).",
+          "method": "POST",
+          "endpoint": "",
+          "apiType": "scripted",
+          "parameters": [
+            {
+              "name": "request",
+              "description": "REQ number or sc_request sys_id",
+              "type": "string",
+              "required": true,
+              "in": "body"
+            }
+          ],
+          "kind": "handler",
+          "handler": "catalog.request_status",
+          "id": "4c2a1f7e-0b3d-4e5a-9c6f-1a2b3c4d5e06"
+        }
+      ],
+      "addedIn": "0.2.0"
     }
   ]
 }
