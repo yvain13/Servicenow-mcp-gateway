@@ -30,6 +30,8 @@ function matches(row: Row, query: string): boolean {
 
 export class FakeSN {
   tables: Record<string, Row[]> = {};
+  // Service Catalog API item responses: item sys_id → result.variables.
+  scVariables: Record<string, any[]> = {};
   calls: { method: string; path: string; query: Record<string, any>; body?: any; user: string }[] = [];
   users: Record<string, string> = { admin: "admin" }; // username → password
   // OAuth: registered apps, who "signs in" at /oauth_auth.do, and issued tokens.
@@ -168,6 +170,11 @@ export class FakeSN {
         if (i > 0) fromTemplate[part.slice(0, i)] = part.slice(i + 1);
       }
       res.json(createChange("standard", req.body, fromTemplate));
+    });
+    app.get("/api/sn_sc/servicecatalog/items/:id", (req, res) => {
+      const item = this.find("sc_cat_item", req.params.id);
+      if (!item) return res.status(404).json({ error: { message: "Catalog item not found" } });
+      res.json({ result: { sys_id: item.sys_id, name: item["name"], variables: this.scVariables[item.sys_id] ?? [] } });
     });
     // Service Catalog API: order_now creates a request and one requested item.
     let reqSeq = 10000;

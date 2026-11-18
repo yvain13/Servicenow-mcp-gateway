@@ -289,10 +289,11 @@ function controlFor(v: CatalogVariable): Control | HTMLElement | null {
     case "checkbox":
       return checkbox(v);
     case "radio":
-      return radios(v);
     case "select":
     case "yesno":
-      return select(v);
+      // No choices could be loaded: let the user type the value rather than show nothing.
+      if (!v.choices?.length) return simple(v, el("input", { type: "text", placeholder: "Type a value" }) as HTMLInputElement);
+      return v.kind === "radio" ? radios(v) : select(v);
     case "reference":
       return reference(v);
     case "list":
